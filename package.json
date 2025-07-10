@@ -1,0 +1,30 @@
+{
+  "name": "whatsapp-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "vuex": "^4.1.0",
+    "vuetify": "^3.5.14",
+    "@mdi/font": "^7.4.47",
+    "axios": "^1.6.8",
+    "socket.io-client": "^4.7.5",
+    "dayjs": "^1.11.10",
+    "vee-validate": "^4.12.6",
+    "@vee-validate/rules": "^4.12.6",
+    "vue-toastification": "^2.0.0-rc.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.2.0",
+    "sass": "^1.72.0",
+    "vite-plugin-vuetify": "^2.0.3"
+  }
+}

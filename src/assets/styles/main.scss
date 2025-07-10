@@ -1,0 +1,258 @@
+// Variables personalizadas
+:root {
+  --whatsapp-green: #25D366;
+  --whatsapp-dark: #075E54;
+  --whatsapp-light: #DCF8C6;
+  --whatsapp-teal: #128C7E;
+  --whatsapp-blue: #34B7F1;
+}
+
+// Reset básico
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+// Estilos globales
+html {
+  overflow-y: auto !important;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #f0f2f5;
+}
+
+// Scrollbar personalizada
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+  
+  &:hover {
+    background: #555;
+  }
+}
+
+// Animaciones
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+// Clases de utilidad
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+.whatsapp-gradient {
+  background: linear-gradient(135deg, var(--whatsapp-green) 0%, var(--whatsapp-teal) 100%);
+}
+
+.text-whatsapp {
+  color: var(--whatsapp-green) !important;
+}
+
+.hover-scale {
+  transition: transform 0.2s;
+  
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+// Chat bubble estilo WhatsApp
+.chat-bubble {
+  position: relative;
+  background: white;
+  border-radius: 7.5px;
+  padding: 8px 12px;
+  margin: 8px;
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+  
+  &.sent {
+    background: var(--whatsapp-light);
+    margin-left: auto;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      right: -8px;
+      top: 0;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 0 10px 10px;
+      border-color: transparent transparent transparent var(--whatsapp-light);
+    }
+  }
+  
+  &.received {
+    background: white;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      left: -8px;
+      top: 0;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 10px 10px 0;
+      border-color: transparent white transparent transparent;
+    }
+  }
+}
+
+// QR Code container
+.qr-container {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  
+  img {
+    max-width: 280px;
+    margin: 20px auto;
+  }
+}
+
+// Campaign card hover effect
+.campaign-card {
+  transition: all 0.3s ease;
+  cursor: pointer;
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+}
+
+// Status badge
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  
+  &.pending {
+    background: #fff3cd;
+    color: #856404;
+  }
+  
+  &.in-progress {
+    background: #cfe2ff;
+    color: #084298;
+  }
+  
+  &.completed {
+    background: #d1e7dd;
+    color: #0f5132;
+  }
+  
+  &.failed {
+    background: #f8d7da;
+    color: #842029;
+  }
+}
+
+// Loading overlay
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+// Responsive utilities
+@media (max-width: 600px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+@media (min-width: 601px) {
+  .show-mobile {
+    display: none !important;
+  }
+}
+
+// Vue transitions
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.3s cubic-bezier(1.0, 0.5, 0.8, 1.0);
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  transform: translateX(20px);
+  opacity: 0;
+}
