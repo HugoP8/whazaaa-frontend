@@ -45,22 +45,23 @@ const mutations = {
 }
 
 const actions = {
-  async login({ commit }, credentials) {
-    commit('SET_LOADING', true)
-    try {
-      const response = await authService.login(credentials)
-      commit('SET_TOKEN', response.token)
-      commit('SET_USER', response.user)
-      toast.success('¡Bienvenido!')
-      router.push('/dashboard')
-      return response
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Error al iniciar sesión')
-      throw error
-    } finally {
-      commit('SET_LOADING', false)
-    }
-  },
+async login({ commit }, credentials) {
+  console.log('Login action called with:', credentials);
+  commit('SET_LOADING', true);
+  try {
+    const response = await authService.login(credentials);
+    commit('SET_TOKEN', response.token);
+    commit('SET_USER', response.user);
+    toast.success('¡Bienvenido!');
+    router.push('/dashboard');
+    return response;
+  } catch (error) {
+    toast.error(error.response?.data?.error || 'Error al iniciar sesión');
+    throw error;
+  } finally {
+    commit('SET_LOADING', false);
+  }
+},
   
   async register({ commit }, userData) {
     commit('SET_LOADING', true)
