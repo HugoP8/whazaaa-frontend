@@ -7,7 +7,7 @@ const toast = useToast()
 
 // Crear instancia de axios
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
