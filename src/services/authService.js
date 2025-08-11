@@ -2,6 +2,7 @@ import api from './api'
 
 export const authService = {
   async login(credentials) {
+    console.log('authService.login:', credentials)
     const response = await api.post('/auth/login', credentials)
     return response.data
   },
@@ -22,8 +23,7 @@ export const authService = {
   },
 
   async changePassword(data) {
-    const response = await api.post('/auth/change-password', data)
-    return response.data
+    await api.put('/auth/password', data)
   },
 
   logout() {

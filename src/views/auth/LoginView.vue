@@ -23,7 +23,7 @@
     </v-card-title>
     
     <v-card-text>
-      <v-form ref="form">
+      <v-form ref="form" @submit.prevent="handleLogin">
         <v-text-field
           v-model="email"
           label="Correo Electrónico"
@@ -63,12 +63,23 @@
           block
           size="large"
           :loading="loading"
-          @click="handleLogin"
+          type="submit"
           class="mb-4"
           style="text-transform: none; letter-spacing: 0.5px;"
         >
           <span class="text-white text-body-1 font-weight-medium">Iniciar Sesión</span>
         </v-btn>
+
+        <!-- Mensaje de error -->
+        <v-alert
+          v-if="error"
+          type="error"
+          variant="tonal"
+          class="text-center mb-4"
+          transition="scale-transition"
+        >
+          {{ error }}
+        </v-alert>
 
         <!-- Mensaje de éxito con animación -->
         <v-alert
@@ -101,7 +112,9 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import axios from 'axios'
+import { useToast } from 'vue-toastification'
 
+const toast = useToast()
 const router = useRouter()
 const store = useStore()
 
@@ -111,48 +124,57 @@ const showPassword = ref(false)
 const rememberMe = ref(false)
 const loading = ref(false)
 const showSuccess = ref(false)
+const error = ref(null)
 
 const handleLogin = async () => {
-  console.log('handleLogin iniciado - email:', email.value, 'password:', password.value);
+  console.log('handleLogin iniciado - email:', email.value, 'password:', password.value)
   if (!email.value || !password.value) {
-    console.log('Campos email o contraseña vacíos');
-    return;
+    error.value = 'Por favor, completa todos los campos'
+    console.log('Campos email o contraseña vacíos')
+    return
   }
 
-  loading.value = true;
+  loading.value = true
+  error.value = null
+  showSuccess.value = false
+
   try {
     const loginData = {
       email: email.value,
       password: password.value
-    };
-    console.log('Enviando solicitud a /api/auth/login con:', loginData);
-    const response = await axios.post('http://localhost:3000/api/auth/login', loginData);
-    console.log('Respuesta del servidor:', response.data);
-    if (response.status === 200) {
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        store.commit('auth/SET_TOKEN', response.data.token);
-        store.commit('auth/SET_USER', response.data.user || {});
-        console.log('Token y usuario guardados en Vuex');
-      }
-      showSuccess.value = true; // Mostrar mensaje de éxito
-      console.log('Login exitoso, preparando redirección');
+    }
+    console.log('Enviando solicitud a /api/auth/login con:', loginData)
+    const response = await axios.post('http://localhost:3000/api/auth/login', loginData)
+    console.log('Respuesta del servidor:', response.data)
+    
+    if (response.status === 200 && response.data.token) {
+      localStorage.setItem('token', response.data.token)
+      localStorage.setItem('user', JSON.stringify(response.data.user || {}))
+      store.commit('auth/SET_TOKEN', response.data.token)
+      store.commit('auth/SET_USER', response.data.user || {})
+      console.log('Token y usuario guardados en localStorage y Vuex')
+      showSuccess.value = true
+      console.log('Login exitoso, preparando redirección')
       setTimeout(() => {
         router.push('/dashboard').then(() => {
-          console.log('Redirección completada');
+          console.log('Redirección completada')
         }).catch(err => {
-          console.error('Error en redirección:', err);
-        });
-      }, 1500); // Retraso de 1.5 segundos para mostrar el mensaje
+          console.error('Error en redirección:', err)
+          error.value = 'Error al redirigir al dashboard'
+        })
+      }, 1500)
     } else {
-      console.log('Respuesta no exitosa:', response.status, response.data);
+      console.log('Respuesta no exitosa:', response.status, response.data)
+      error.value = 'Error al iniciar sesión'
     }
-  } catch (error) {
-    console.error('Error en la solicitud:', error.response ? error.response.data : error.message);
+  } catch (err) {
+    console.error('Error en la solicitud:', err.response ? err.response.data : err.message)
+    error.value = err.response?.data?.error || 'Error al iniciar sesión'
+    toast.error(error.value)
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 </script>
 
 <style scoped>

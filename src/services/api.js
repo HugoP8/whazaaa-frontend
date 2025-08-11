@@ -1,69 +1,54 @@
 import axios from 'axios'
 import { API_URL } from '@/utils/constants'
-import router from '@/router'
 import { useToast } from 'vue-toastification'
+import router from '@/router'
 
 const toast = useToast()
 
-// Crear instancia de axios
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000,
+  baseURL: API_URL,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
-// Interceptor para agregar token
 api.interceptors.request.use(
-  (config) => {
+  config => {
     const token = localStorage.getItem('token')
+    console.log('Interceptor request:', config.url, 'Token:', token ? 'Presente' : 'No encontrado')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
-  (error) => {
+  error => {
+    console.error('Error en el interceptor de solicitud:', error)
     return Promise.reject(error)
   }
 )
 
-// Interceptor para manejar respuestas
 api.interceptors.response.use(
-  (response) => {
+  response => {
+    console.log('Interceptor response:', response.config.url, 'Estado:', response.status)
     return response
   },
-  (error) => {
+  error => {
+    console.error('Error en la respuesta:', error.response?.status, error.response?.data)
     if (error.response) {
-      // Error del servidor
       switch (error.response.status) {
         case 401:
-          // Token expirado o inválido
           localStorage.removeItem('token')
           localStorage.removeItem('user')
           router.push('/login')
-          toast.error('Sesión expirada. Por favor inicia sesión nuevamente.')
-          break
-        case 403:
-          toast.error('No tienes permisos para realizar esta acción')
-          break
-        case 404:
-          toast.error('Recurso no encontrado')
-          break
-        case 500:
-          toast.error('Error del servidor. Por favor intenta más tarde.')
+          toast.error('Sesión expirada. Por favor, inicia sesión nuevamente.')
           break
         default:
-          toast.error(error.response.data.error || 'Error desconocido')
+          toast.error(error.response.data?.error || 'Error en la solicitud')
       }
-    } else if (error.request) {
-      // No hubo respuesta del servidor
-      toast.error('No se pudo conectar con el servidor')
     } else {
-      // Error en la configuración
-      toast.error('Error en la solicitud')
+      toast.error('No se pudo conectar con el servidor')
     }
-    
     return Promise.reject(error)
   }
 )

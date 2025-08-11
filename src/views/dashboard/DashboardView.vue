@@ -1,3 +1,4 @@
+<!-- src/views/dashboard/DashboardView.vue - VERSIÓN CORREGIDA -->
 <template>
   <div>
     <v-row>
@@ -8,14 +9,14 @@
       </v-col>
     </v-row>
     
-    <!-- Estado de WhatsApp -->
+    <!-- Estado de WhatsApp - Solo mostrar QRCode sin interferir -->
     <v-row v-if="!isConnected">
       <v-col cols="12">
         <qr-code />
       </v-col>
     </v-row>
     
-    <!-- Estadísticas -->
+    <!-- Estadísticas - Solo cuando está conectado -->
     <v-row v-else>
       <v-col
         v-for="stat in stats"
@@ -58,9 +59,11 @@
           </v-card-title>
           <v-card-text>
             <v-sheet height="300">
-              <!-- Aquí iría un gráfico con Chart.js o similar -->
               <div class="d-flex align-center justify-center fill-height text-grey">
-                Gráfico de mensajes
+                <div class="text-center">
+                  <v-icon size="48" color="grey-lighten-1">mdi-chart-line</v-icon>
+                  <p class="mt-2">Gráfico de mensajes próximamente</p>
+                </div>
               </div>
             </v-sheet>
           </v-card-text>
@@ -82,7 +85,7 @@
             </v-btn>
           </v-card-title>
           <v-card-text>
-            <v-list>
+            <v-list v-if="recentCampaigns.length > 0">
               <v-list-item
                 v-for="campaign in recentCampaigns"
                 :key="campaign.id"
@@ -106,6 +109,21 @@
                 </v-list-item-subtitle>
               </v-list-item>
             </v-list>
+            
+            <!-- Estado vacío -->
+            <div v-else class="text-center py-4">
+              <v-icon size="48" color="grey-lighten-1">mdi-email-outline</v-icon>
+              <p class="text-grey mt-2">No hay campañas recientes</p>
+              <v-btn
+                color="primary"
+                variant="outlined"
+                size="small"
+                class="mt-2"
+                @click="$router.push('/campaigns/new')"
+              >
+                Crear Primera Campaña
+              </v-btn>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -128,11 +146,12 @@
           elevation="2"
           rounded="xl"
           class="campaign-card"
-          @click="$router.push(action.to)"
+          @click="handleActionClick(action)"
+          :disabled="action.disabled"
         >
           <v-card-text class="text-center pa-6">
             <v-icon
-              :color="action.color"
+              :color="action.disabled ? 'grey' : action.color"
               size="48"
               class="mb-3"
             >
@@ -142,6 +161,44 @@
             <p class="text-body-2 text-grey mt-2">
               {{ action.description }}
             </p>
+            <v-chip
+              v-if="action.badge"
+              size="small"
+              :color="action.badgeColor"
+              class="mt-2"
+            >
+              {{ action.badge }}
+            </v-chip>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+    
+    <!-- Información adicional cuando está conectado -->
+    <v-row v-if="isConnected" class="mt-4">
+      <v-col cols="12">
+        <v-card elevation="1" rounded="xl" color="green-lighten-5">
+          <v-card-text>
+            <div class="d-flex align-center">
+              <v-icon color="green" size="24" class="mr-3">mdi-check-circle</v-icon>
+              <div class="flex-grow-1">
+                <p class="text-body-1 mb-1 text-green-darken-2">
+                  <strong>WhatsApp Conectado</strong>
+                </p>
+                <p class="text-body-2 text-green-darken-1 mb-0">
+                  Tu WhatsApp está listo para enviar mensajes masivos. 
+                  {{ connectionInfo ? `Conectado como: ${connectionInfo.name || connectionInfo.id?.split(':')[0] || 'Usuario'}` : '' }}
+                </p>
+              </div>
+              <v-btn
+                color="green"
+                variant="elevated"
+                @click="$router.push('/campaigns/new')"
+              >
+                <v-icon left>mdi-send</v-icon>
+                Crear Campaña
+              </v-btn>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -150,17 +207,49 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, watch, ref } from 'vue'
 import { useStore } from 'vuex'
+import { useRouter } from 'vue-router'
 import QRCode from '@/components/whatsapp/QRCode.vue'
 import { CAMPAIGN_STATUS_COLORS } from '@/utils/constants'
 import dayjs from 'dayjs'
 
 const store = useStore()
+const router = useRouter()
 
-const isConnected = computed(() => store.getters['whatsapp/isConnected'])
-const campaignStats = computed(() => store.getters['campaigns/campaignStats'])
-const recentCampaigns = computed(() => store.getters['campaigns/recentCampaigns'])
+// Estados reactivos
+const loadingCampaigns = ref(false)
+const campaignStats = ref({
+  total: 0,
+  completed: 0,
+  inProgress: 0,
+  failed: 0
+})
+
+// Estados computados
+const isConnected = computed(() => {
+  const connected = store.getters['whatsapp/isConnected']
+  console.log('[Dashboard] isConnected:', connected)
+  return connected
+})
+
+const connecting = computed(() => {
+  const connecting = store.getters['whatsapp/isConnecting']
+  console.log('[Dashboard] connecting:', connecting)
+  return connecting
+})
+
+const connectionInfo = computed(() => {
+  const info = store.getters['whatsapp/connectionInfo']
+  console.log('[Dashboard] connectionInfo:', info)
+  return info
+})
+
+const recentCampaigns = computed(() => {
+  const campaigns = store.getters['campaigns/recentCampaigns'] || []
+  console.log('[Dashboard] recentCampaigns:', campaigns.length)
+  return campaigns
+})
 
 const stats = computed(() => [
   {
@@ -182,56 +271,176 @@ const stats = computed(() => [
     color: 'info'
   },
   {
-    title: 'Mensajes Hoy',
-    value: 45, // TODO: Obtener del backend
-    icon: 'mdi-message-text',
-    color: 'warning'
+    title: 'Fallidas',
+    value: campaignStats.value.failed || 0,
+    icon: 'mdi-alert-circle',
+    color: 'error'
   }
 ])
 
-const quickActions = [
+const quickActions = computed(() => [
   {
     title: 'Nueva Campaña',
     description: 'Crear y enviar mensajes',
     icon: 'mdi-send',
     color: 'primary',
-    to: '/campaigns/new'
+    to: '/campaigns/new',
+    disabled: false,
+    badge: 'Nuevo',
+    badgeColor: 'primary'
   },
   {
     title: 'Ver Campañas',
-    description: 'Gestionar campañas',
+    description: 'Gestionar campañas existentes',
     icon: 'mdi-email-multiple',
     color: 'success',
-    to: '/campaigns'
+    to: '/campaigns',
+    disabled: false,
+    badge: campaignStats.value.total > 0 ? `${campaignStats.value.total}` : null,
+    badgeColor: 'success'
   },
   {
     title: 'Contactos',
     description: 'Administrar contactos',
     icon: 'mdi-contacts',
     color: 'info',
-    to: '/contacts'
+    to: '/contacts',
+    disabled: false
   },
   {
     title: 'Configuración',
     description: 'Ajustes del sistema',
     icon: 'mdi-cog',
     color: 'warning',
-    to: '/settings'
+    to: '/settings',
+    disabled: false
   }
-]
+])
 
+// Métodos
 const getStatusColor = (status) => {
-  return CAMPAIGN_STATUS_COLORS[status] || 'grey'
+  return CAMPAIGN_STATUS_COLORS?.[status] || 'grey'
 }
 
 const formatDate = (date) => {
+  if (!date) return 'Sin fecha'
   return dayjs(date).format('DD/MM/YYYY HH:mm')
 }
 
-onMounted(() => {
-  // Cargar datos iniciales
-  if (isConnected.value) {
-    store.dispatch('campaigns/fetchCampaigns')
+const handleActionClick = (action) => {
+  if (action.disabled) return
+  
+  if (action.to) {
+    router.push(action.to)
+  }
+}
+
+const loadCampaignStats = async () => {
+  if (!isConnected.value) return
+  
+  try {
+    loadingCampaigns.value = true
+    console.log('[Dashboard] Cargando estadísticas de campañas...')
+    
+    const stats = await store.dispatch('campaigns/fetchCampaignStats')
+    campaignStats.value = stats
+    
+    console.log('[Dashboard] Estadísticas cargadas:', stats)
+  } catch (error) {
+    console.error('[Dashboard] Error cargando estadísticas:', error)
+    // No mostrar error al usuario para estadísticas
+  } finally {
+    loadingCampaigns.value = false
+  }
+}
+
+const loadRecentCampaigns = async () => {
+  if (!isConnected.value) return
+  
+  try {
+    console.log('[Dashboard] Cargando campañas recientes...')
+    await store.dispatch('campaigns/fetchCampaigns', { 
+      page: 1, 
+      perPage: 5 
+    })
+    console.log('[Dashboard] Campañas recientes cargadas')
+  } catch (error) {
+    console.error('[Dashboard] Error cargando campañas recientes:', error)
+    // No mostrar error al usuario para campañas recientes
+  }
+}
+
+// Watch para cargar datos cuando se conecte WhatsApp
+watch(isConnected, async (newValue, oldValue) => {
+  console.log('[Dashboard] WhatsApp connection changed:', { old: oldValue, new: newValue })
+  
+  if (newValue && !oldValue) {
+    console.log('[Dashboard] WhatsApp conectado - Cargando datos...')
+    
+    // Cargar datos en paralelo
+    await Promise.allSettled([
+      loadCampaignStats(),
+      loadRecentCampaigns()
+    ])
+    
+    console.log('[Dashboard] Datos cargados exitosamente')
+  }
+}, { immediate: false })
+
+// Lifecycle
+onMounted(async () => {
+  console.log('[Dashboard] Componente montado')
+  
+  try {
+    // Verificar estado de WhatsApp sin intentar conectar
+    await store.dispatch('whatsapp/checkStatus')
+    console.log('[Dashboard] Estado de WhatsApp verificado')
+    
+    // Si ya está conectado, cargar datos inmediatamente
+    if (isConnected.value) {
+      console.log('[Dashboard] Ya conectado - Cargando datos iniciales...')
+      await Promise.allSettled([
+        loadCampaignStats(),
+        loadRecentCampaigns()
+      ])
+    }
+  } catch (error) {
+    console.error('[Dashboard] Error en inicialización:', error)
+    // No bloquear la carga del dashboard por errores de verificación
   }
 })
 </script>
+
+<style scoped>
+.hover-scale {
+  transition: transform 0.3s ease;
+  cursor: pointer;
+}
+
+.hover-scale:hover {
+  transform: scale(1.03);
+}
+
+.campaign-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.campaign-card:hover:not(.v-card--disabled) {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+}
+
+.campaign-card.v-card--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.text-green-darken-1 {
+  color: #2e7d32 !important;
+}
+
+.text-green-darken-2 {
+  color: #1b5e20 !important;
+}
+</style>
