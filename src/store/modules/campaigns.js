@@ -354,6 +354,38 @@ const actions = {
   // Limpiar campaña actual
   clearCurrentCampaign({ commit }) {
     commit('SET_CURRENT_CAMPAIGN', null)
+  },
+
+  // Duplicar campaña
+  async duplicateCampaign({ commit, dispatch }, { campaignId, newName = null }) {
+    commit('SET_LOADING', true)
+    commit('SET_ERROR', null)
+    
+    try {
+      console.log('[Campaigns Store] Duplicando campaña:', campaignId, 'con nombre:', newName)
+      const response = await api.post(`/campaigns/${campaignId}/duplicate`, {
+        newName
+      })
+      
+      const duplicatedCampaign = response.data.data || response.data
+      commit('ADD_CAMPAIGN', duplicatedCampaign)
+      
+      toast.success(`Campaña duplicada: ${duplicatedCampaign.name}`)
+      console.log('[Campaigns Store] Campaña duplicada:', duplicatedCampaign.id)
+      
+      // Refrescar la lista de campañas
+      await dispatch('fetchCampaigns')
+      
+      return duplicatedCampaign
+    } catch (error) {
+      console.error('[Campaigns Store] Error duplicando campaña:', error)
+      const errorMessage = error.response?.data?.message || error.message || 'Error al duplicar campaña'
+      commit('SET_ERROR', errorMessage)
+      toast.error(errorMessage)
+      throw error
+    } finally {
+      commit('SET_LOADING', false)
+    }
   }
 }
 

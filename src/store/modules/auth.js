@@ -3,13 +3,42 @@ import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import router from '@/router'
 
+// Secure storage functions
+const secureStorage = {
+  getItem: (key) => {
+    try {
+      const item = localStorage.getItem(key)
+      return item ? JSON.parse(item) : null
+    } catch (error) {
+      console.error('Error reading from storage:', error)
+      return null
+    }
+  },
+  setItem: (key, value) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value))
+    } catch (error) {
+      console.error('Error writing to storage:', error)
+    }
+  },
+  removeItem: (key) => {
+    try {
+      localStorage.removeItem(key)
+    } catch (error) {
+      console.error('Error removing from storage:', error)
+    }
+  }
+}
+
 const toast = useToast()
 
 const state = {
-  user: JSON.parse(localStorage.getItem('user')) || null,
-  token: localStorage.getItem('token') || null,
+  user: secureStorage.getItem('user'),
+  token: secureStorage.getItem('token'),
   loading: false,
-  error: null
+  error: null,
+  lastActivity: null,
+  initialized: false
 }
 
 const mutations = {
@@ -17,9 +46,9 @@ const mutations = {
     console.log('[Auth Store] SET_USER:', user)
     state.user = user
     if (user) {
-      localStorage.setItem('user', JSON.stringify(user))
+      secureStorage.setItem('user', user)
     } else {
-      localStorage.removeItem('user')
+      secureStorage.removeItem('user')
     }
   },
   
@@ -27,9 +56,9 @@ const mutations = {
     console.log('[Auth Store] SET_TOKEN:', token ? 'Presente' : 'No presente')
     state.token = token
     if (token) {
-      localStorage.setItem('token', token)
+      secureStorage.setItem('token', token)
     } else {
-      localStorage.removeItem('token')
+      secureStorage.removeItem('token')
     }
   },
   
@@ -48,32 +77,46 @@ const mutations = {
     state.user = null
     state.token = null
     state.error = null
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
+    secureStorage.removeItem('user')
+    secureStorage.removeItem('token')
+  },
+  
+  SET_INITIALIZED(state, initialized) {
+    console.log('[Auth Store] SET_INITIALIZED:', initialized)
+    state.initialized = initialized
   }
 }
 
 const actions = {
   // Inicializar autenticación al cargar la app
-  async init({ commit, dispatch }) {
+  async initialize({ commit, dispatch }) {
     console.log('[Auth Store] Inicializando autenticación')
-    const token = localStorage.getItem('token')
-    const user = JSON.parse(localStorage.getItem('user') || 'null')
     
-    if (token && user) {
-      console.log('[Auth Store] Token y usuario encontrados en localStorage')
-      commit('SET_TOKEN', token)
-      commit('SET_USER', user)
+    try {
+      const token = secureStorage.getItem('token')
+      const user = secureStorage.getItem('user')
       
-      // Verificar si el token sigue siendo válido
-      try {
-        await dispatch('verifyToken')
-      } catch (error) {
-        console.log('[Auth Store] Token inválido, limpiando sesión')
-        dispatch('logout')
+      if (token && user) {
+        console.log('[Auth Store] Token y usuario encontrados en localStorage')
+        commit('SET_TOKEN', token)
+        commit('SET_USER', user)
+        
+        // Verificar si el token sigue siendo válido
+        try {
+          await dispatch('verifyToken')
+          console.log('[Auth Store] Token válido - sesión restaurada')
+        } catch (error) {
+          console.log('[Auth Store] Token inválido, limpiando sesión')
+          commit('CLEAR_AUTH')
+        }
+      } else {
+        console.log('[Auth Store] No hay sesión guardada')
       }
-    } else {
-      console.log('[Auth Store] No hay sesión guardada')
+    } catch (error) {
+      console.error('[Auth Store] Error en inicialización:', error)
+      commit('CLEAR_AUTH')
+    } finally {
+      commit('SET_INITIALIZED', true)
     }
   },
   
@@ -97,6 +140,24 @@ const actions = {
   
   // Login
   async login({ commit }, credentials) {
+    // Input validation
+    if (!credentials || typeof credentials !== 'object') {
+      throw new Error('Credenciales inválidas')
+    }
+    
+    const { email, password } = credentials
+    if (!email || !password) {
+      throw new Error('Email y contraseña son requeridos')
+    }
+    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Por favor ingresa un email válido')
+    }
+    
+    if (password.length < 6) {
+      throw new Error('La contraseña debe tener al menos 6 caracteres')
+    }
+    
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
     
@@ -136,6 +197,29 @@ const actions = {
   
   // Register
   async register({ commit }, userData) {
+    // Input validation
+    if (!userData || typeof userData !== 'object') {
+      throw new Error('Datos de registro inválidos')
+    }
+    
+    const { name, email, password, passwordConfirm } = userData
+    
+    if (!name || !email || !password || !passwordConfirm) {
+      throw new Error('Todos los campos son requeridos')
+    }
+    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Por favor ingresa un email válido')
+    }
+    
+    if (password.length < 6) {
+      throw new Error('La contraseña debe tener al menos 6 caracteres')
+    }
+    
+    if (password !== passwordConfirm) {
+      throw new Error('Las contraseñas no coinciden')
+    }
+    
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
     
@@ -248,6 +332,33 @@ const actions = {
   }
 }
 
+// Inactivity timer
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000 // 30 minutes
+
+const startInactivityTimer = (commit) => {
+  // Reset timer on user activity
+  const resetTimer = () => {
+    if (window.inactivityTimer) {
+      clearTimeout(window.inactivityTimer)
+    }
+    
+    window.inactivityTimer = setTimeout(() => {
+      commit('CLEAR_AUTH')
+      router.push('/login')
+      toast.info('Has sido desconectado por inactividad')
+    }, INACTIVITY_TIMEOUT)
+  }
+  
+  // Set up event listeners
+  const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
+  events.forEach(event => {
+    document.removeEventListener(event, resetTimer)
+    document.addEventListener(event, resetTimer, { passive: true })
+  })
+  
+  return resetTimer
+}
+
 const getters = {
   // Usuario autenticado
   user: state => {
@@ -309,6 +420,19 @@ const getters = {
   // Verificar si el usuario es admin
   isAdmin: state => {
     return state.user?.role === 'admin'
+  },
+  
+  // Verificar si la sesión está activa
+  isSessionActive: (state) => {
+    if (!state.token) return false
+    // Add additional checks if needed
+    return true
+  },
+  
+  // Verificar si el auth store está inicializado
+  isInitialized: state => {
+    console.log('[Auth Store] getter isInitialized:', state.initialized)
+    return state.initialized
   }
 }
 

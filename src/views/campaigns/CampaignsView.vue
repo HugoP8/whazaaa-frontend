@@ -71,24 +71,27 @@
             <!-- Estado -->
             <template v-slot:item.status="{ item }">
               <v-chip
-                :color="getStatusColor(item.status)"
+                :color="getStatusBadgeConfig(item).vuetifyColor"
                 size="small"
+                variant="tonal"
               >
-                {{ getStatusLabel(item.status) }}
+                <v-icon start size="small">{{ getStatusBadgeConfig(item).icon }}</v-icon>
+                {{ getStatusBadgeConfig(item).display }}
               </v-chip>
             </template>
             
             <!-- Progreso -->
             <template v-slot:item.progress="{ item }">
-              <div v-if="item.totalRecipients" style="min-width: 150px;">
+              <div v-if="item.total_recipients" style="min-width: 150px;">
                 <v-progress-linear
                   :model-value="getProgress(item)"
-                  :color="getStatusColor(item.status)"
+                  :color="getProgressColor(getProgress(item))"
                   height="20"
                   rounded
                 >
                   <template v-slot:default>
-                    {{ item.sentCount || 0 }}/{{ item.totalRecipients }}
+                    {{ item.sent_count || 0 }}/{{ item.total_recipients }}
+                    <small class="ml-1">({{ formatSuccessPercentage(item) }})</small>
                   </template>
                 </v-progress-linear>
               </div>
@@ -106,8 +109,19 @@
                 icon
                 size="small"
                 @click="viewDetails(item)"
+                title="Ver detalles"
               >
                 <v-icon>mdi-eye</v-icon>
+              </v-btn>
+              
+              <v-btn
+                icon
+                size="small"
+                color="primary"
+                @click="duplicateCampaign(item)"
+                title="Duplicar campaña"
+              >
+                <v-icon>mdi-content-copy</v-icon>
               </v-btn>
               
               <v-btn
@@ -116,6 +130,7 @@
                 color="error"
                 @click="confirmDelete(item)"
                 :disabled="item.status === 'IN_PROGRESS'"
+                title="Eliminar campaña"
               >
                 <v-icon>mdi-delete</v-icon>
               </v-btn>
@@ -162,7 +177,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { 
@@ -170,6 +185,13 @@ import {
   CAMPAIGN_STATUS_LABELS, 
   CAMPAIGN_STATUS_COLORS 
 } from '@/utils/constants'
+import { 
+  getStatusBadgeConfig, 
+  formatSuccessPercentage, 
+  getProgressColor,
+  formatCampaignDate,
+  getCampaignTypeIcon
+} from '@/utils/campaignUtils'
 import dayjs from 'dayjs'
 
 const store = useStore()
@@ -183,7 +205,7 @@ const selectedCampaign = ref(null)
 const deleting = ref(false)
 
 const loading = computed(() => store.getters['campaigns/campaignsLoading'])
-const campaigns = computed(() => store.getters['campaigns/allCampaigns'])
+const campaigns = computed(() => store.getters['campaigns/campaigns'])
 
 const headers = [
   { title: 'Nombre', key: 'name', sortable: true },
@@ -206,7 +228,13 @@ const sortOptions = [
 ]
 
 const filteredCampaigns = computed(() => {
-  let filtered = campaigns.value
+  let filtered = campaigns.value || []
+  
+  // Verificar que filtered sea un array
+  if (!Array.isArray(filtered)) {
+    console.warn('[CampaignsView] campaigns.value no es un array:', filtered)
+    return []
+  }
   
   // Filtro por estado
   if (statusFilter.value) {
@@ -236,8 +264,12 @@ const getStatusLabel = (status) => {
 }
 
 const getProgress = (campaign) => {
-  if (!campaign.totalRecipients) return 0
-  return (campaign.sentCount / campaign.totalRecipients) * 100
+  if (!campaign.total_recipients) return 0
+  // Use backend success_percentage if available
+  if (campaign.success_percentage !== undefined) {
+    return parseFloat(campaign.success_percentage)
+  }
+  return (campaign.sent_count / campaign.total_recipients) * 100
 }
 
 const formatDate = (date) => {
@@ -246,6 +278,18 @@ const formatDate = (date) => {
 
 const viewDetails = (campaign) => {
   router.push(`/campaigns/${campaign.id}`)
+}
+
+const duplicateCampaign = async (campaign) => {
+  try {
+    const newName = `${campaign.name} (Copia)`
+    await store.dispatch('campaigns/duplicateCampaign', { 
+      campaignId: campaign.id, 
+      newName 
+    })
+  } catch (error) {
+    console.error('Error duplicando campaña:', error)
+  }
 }
 
 const confirmDelete = (campaign) => {
@@ -267,5 +311,44 @@ const deleteCampaign = async () => {
 
 onMounted(() => {
   store.dispatch('campaigns/fetchCampaigns')
+  
+  // Setup socket listeners for campaign updates
+  const whatsappSocket = store.getters['whatsapp/socket']
+  if (whatsappSocket) {
+    setupSocketListeners(whatsappSocket)
+  }
 })
+
+onUnmounted(() => {
+  // Clean up socket listeners
+  const whatsappSocket = store.getters['whatsapp/socket']
+  if (whatsappSocket) {
+    whatsappSocket.off('campaign-completed')
+    whatsappSocket.off('campaign-progress')
+  }
+})
+
+const setupSocketListeners = (socket) => {
+  // Handle campaign completion
+  socket.on('campaign-completed', (data) => {
+    console.log('[CampaignsView] Campaign completed:', data)
+    
+    if (data.duplicated) {
+      console.log(`[CampaignsView] Campaña duplicada completada: ${data.successCount}/${data.totalCount} enviados`)
+    }
+    
+    // Refresh campaigns list
+    store.dispatch('campaigns/fetchCampaigns')
+  })
+  
+  // Handle campaign progress updates
+  socket.on('campaign-progress', (data) => {
+    console.log(`[CampaignsView] Campaign progress: ${data.type === 'group' ? 'Grupo' : 'Contacto'}: ${data.sent}/${data.total}`)
+    
+    // Optionally update individual campaign in store
+    if (data.campaignId) {
+      store.dispatch('campaigns/fetchCampaignById', data.campaignId)
+    }
+  })
+}
 </script>

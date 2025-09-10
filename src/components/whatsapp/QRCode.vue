@@ -80,15 +80,52 @@
         <!-- Conectado exitosamente -->
         <div v-else-if="isConnected" key="connected">
           <v-icon size="64" color="green" class="success-icon">mdi-check-circle</v-icon>
-          <p class="mt-4 text-h6 text-green">¡WhatsApp Conectado!</p>
-          <div v-if="connectionInfo" class="mt-3">
-            <p class="text-body-2 text-grey mb-1">
-              <strong>Usuario:</strong> {{ connectionInfo.name || 'Usuario de WhatsApp' }}
-            </p>
-            <p class="text-body-2 text-grey mb-1" v-if="connectionInfo.id">
-              <strong>ID:</strong> {{ connectionInfo.id.split(':')[0] }}
-            </p>
-          </div>
+          <p class="mt-4 text-h6 text-green">¡WhatsApp Conectado Exitosamente!</p>
+          
+          <!-- Información del usuario autenticado -->
+          <v-card 
+            v-if="connectionInfo" 
+            class="mt-4 mx-auto"
+            max-width="400"
+            elevation="2"
+            color="green-lighten-5"
+            rounded="xl"
+          >
+            <v-card-text class="text-center">
+              <v-avatar color="green" size="48" class="mb-3">
+                <v-icon color="white" size="24">mdi-account</v-icon>
+              </v-avatar>
+              <p class="text-h6 text-green-darken-2 mb-2">
+                {{ connectionInfo.name || 'Usuario de WhatsApp' }}
+              </p>
+              <p class="text-body-2 text-green-darken-1" v-if="connectionInfo.phone">
+                <v-icon size="16" class="mr-1">mdi-phone</v-icon>
+                {{ connectionInfo.phone }}
+              </p>
+              <p class="text-body-2 text-green-darken-1" v-if="connectionInfo.id">
+                <v-icon size="16" class="mr-1">mdi-identifier</v-icon>
+                ID: {{ connectionInfo.id.split(':')[0] }}
+              </p>
+              <v-chip 
+                color="green" 
+                size="small" 
+                class="mt-2"
+                prepend-icon="mdi-check-circle"
+              >
+                Autenticado
+              </v-chip>
+            </v-card-text>
+          </v-card>
+          
+          <!-- Fallback si no hay información del usuario -->
+          <v-alert
+            v-else
+            type="success"
+            variant="tonal"
+            class="mt-4"
+          >
+            <strong>Estado:</strong> Conectado y listo para enviar mensajes
+          </v-alert>
           
           <div class="mt-4">
             <v-btn 
@@ -150,17 +187,30 @@
             Presiona el botón para generar un código QR y vincular tu cuenta
           </p>
           
-          <v-btn 
-            color="green" 
-            class="mt-4" 
-            @click="connect"
-            :loading="connecting"
-            size="large"
-            elevation="2"
-          >
-            <v-icon left>mdi-whatsapp</v-icon>
-            Conectar WhatsApp
-          </v-btn>
+          <div class="mt-4">
+            <v-btn 
+              color="green" 
+              @click="connect"
+              :loading="connecting"
+              size="large"
+              elevation="2"
+              class="mr-2"
+            >
+              <v-icon left>mdi-whatsapp</v-icon>
+              Conectar WhatsApp
+            </v-btn>
+            
+            <v-btn 
+              color="blue" 
+              variant="outlined"
+              @click="checkConnectionStatus"
+              :loading="checkingStatus"
+              size="large"
+            >
+              <v-icon left>mdi-refresh</v-icon>
+              Verificar Estado
+            </v-btn>
+          </div>
         </div>
       </v-card-text>
       
@@ -244,9 +294,11 @@ const store = useStore()
 const router = useRouter()
 
 // Estados locales
+const loading = ref(false)
 const disconnecting = ref(false)
 const showSocketError = ref(false)
 const socketConnected = ref(false)
+const checkingStatus = ref(false)
 
 // Computed properties
 const qrCode = computed(() => store.getters['whatsapp/qrCode'])
@@ -270,10 +322,23 @@ const connect = async () => {
   }
   
   console.log('[QRCode] Iniciando conexión...')
+  loading.value = true
+  
   try {
     await store.dispatch('whatsapp/connect')
+    
+    // Verificar si ya está conectado después del intento de conexión
+    if (isConnected.value) {
+      console.log('[QRCode] ✅ Usuario ya conectado, ocultando QR')
+      loading.value = false
+      return
+    }
   } catch (error) {
     console.error('[QRCode] Error al conectar:', error)
+  } finally {
+    setTimeout(() => {
+      loading.value = false
+    }, 3000) // Dar tiempo para que aparezca el QR
   }
 }
 
@@ -320,13 +385,47 @@ const goToCampaigns = () => {
 
 const onImageError = (event) => {
   console.error('[QRCode] Error cargando imagen QR:', event)
+  console.log('[QRCode] QR Code actual:', qrCode.value)
+  
+  // Si la imagen no carga, intentar regenerar el QR
+  setTimeout(() => {
+    console.log('[QRCode] Reintentando carga de QR por error de imagen...')
+    regenerateQR()
+  }, 2000)
 }
 
 const onImageLoad = () => {
   console.log('[QRCode] QR Code cargado exitosamente')
 }
 
-// Monitorear conexión del socket
+// Función para verificar manualmente el estado de conexión
+const checkConnectionStatus = async () => {
+  console.log('[QRCode] 🔍 Verificando estado de conexión manualmente...')
+  checkingStatus.value = true
+  
+  try {
+    // Usar la función mejorada de detección y reconexión
+    const connected = await store.dispatch('whatsapp/detectAndReconnect')
+    
+    if (connected) {
+      console.log('[QRCode] ✅ ¡Conexión verificada y sincronizada!')
+    } else {
+      console.log('[QRCode] ❌ No se encontró conexión activa - es necesario escanear QR')
+      
+      // Si no hay conexión, intentar iniciar nueva conexión
+      if (!connecting.value && !qrCode.value) {
+        console.log('[QRCode] Iniciando nueva conexión...')
+        await connect()
+      }
+    }
+  } catch (error) {
+    console.error('[QRCode] Error verificando estado:', error)
+  } finally {
+    checkingStatus.value = false
+  }
+}
+
+// Monitorear conexión del socket (simplificado para evitar loops)
 const monitorSocket = () => {
   const updateSocketStatus = () => {
     const serviceInfo = whatsappService.getSocketInfo()
@@ -339,7 +438,7 @@ const monitorSocket = () => {
     }
   }
   
-  // Verificar cada 5 segundos
+  // Verificar cada 5 segundos (menos frecuente para evitar spam)
   const interval = setInterval(updateSocketStatus, 5000)
   updateSocketStatus() // Verificar inmediatamente
   
@@ -352,6 +451,22 @@ watch(isConnected, (newValue, oldValue) => {
   
   if (newValue) {
     showSocketError.value = false
+    console.log('[QRCode] ✅ WhatsApp conectado exitosamente!')
+  }
+})
+
+// Watch para detectar cuando aparece el QR y agregar timeout
+watch(qrCode, (newValue, oldValue) => {
+  if (newValue && !oldValue) {
+    console.log('[QRCode] QR Code apareció - iniciando timeout de 30 segundos')
+    
+    // QR válido por 30 segundos, luego regenerar automáticamente
+    setTimeout(() => {
+      if (qrCode.value && !isConnected.value) {
+        console.log('[QRCode] QR expirado después de 30 segundos - regenerando...')
+        regenerateQR()
+      }
+    }, 30000) // 30 segundos
   }
 })
 

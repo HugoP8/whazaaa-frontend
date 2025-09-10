@@ -14,6 +14,7 @@ import NewCampaignView from '@/views/campaigns/NewCampaignView.vue'
 import CampaignDetailView from '@/views/campaigns/CampaignDetailView.vue'
 import ContactsView from '@/views/contacts/ContactsView.vue'
 import SettingsView from '@/views/settings/SettingsView.vue'
+import BulkMessagesView from '@/views/messages/BulkMessagesView.vue'
 
 const routes = [
   {
@@ -66,6 +67,11 @@ const routes = [
         path: 'contacts',
         name: 'Contacts',
         component: ContactsView
+      },
+      {
+        path: 'messages',
+        name: 'BulkMessages',
+        component: BulkMessagesView
       },
       {
         path: 'settings',

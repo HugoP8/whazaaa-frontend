@@ -12,7 +12,7 @@
     <!-- Estado de WhatsApp - Solo mostrar QRCode sin interferir -->
     <v-row v-if="!isConnected">
       <v-col cols="12">
-        <qr-code />
+        <QRCode />
       </v-col>
     </v-row>
     
@@ -251,71 +251,77 @@ const recentCampaigns = computed(() => {
   return campaigns
 })
 
-const stats = computed(() => [
-  {
-    title: 'Campañas Totales',
-    value: campaignStats.value.total || 0,
-    icon: 'mdi-email-multiple',
-    color: 'primary'
-  },
-  {
-    title: 'Completadas',
-    value: campaignStats.value.completed || 0,
-    icon: 'mdi-check-circle',
-    color: 'success'
-  },
-  {
-    title: 'En Progreso',
-    value: campaignStats.value.inProgress || 0,
-    icon: 'mdi-progress-clock',
-    color: 'info'
-  },
-  {
-    title: 'Fallidas',
-    value: campaignStats.value.failed || 0,
-    icon: 'mdi-alert-circle',
-    color: 'error'
-  }
-])
+const stats = computed(() => {
+  const statData = campaignStats.value || {}
+  return [
+    {
+      title: 'Campañas Totales',
+      value: statData.total || 0,
+      icon: 'mdi-email-multiple',
+      color: 'primary'
+    },
+    {
+      title: 'Completadas',
+      value: statData.completed || 0,
+      icon: 'mdi-check-circle',
+      color: 'success'
+    },
+    {
+      title: 'En Progreso',
+      value: statData.inProgress || 0,
+      icon: 'mdi-progress-clock',
+      color: 'info'
+    },
+    {
+      title: 'Fallidas',
+      value: statData.failed || 0,
+      icon: 'mdi-alert-circle',
+      color: 'error'
+    }
+  ]
+})
 
-const quickActions = computed(() => [
-  {
-    title: 'Nueva Campaña',
-    description: 'Crear y enviar mensajes',
-    icon: 'mdi-send',
-    color: 'primary',
-    to: '/campaigns/new',
-    disabled: false,
-    badge: 'Nuevo',
-    badgeColor: 'primary'
-  },
-  {
-    title: 'Ver Campañas',
-    description: 'Gestionar campañas existentes',
-    icon: 'mdi-email-multiple',
-    color: 'success',
-    to: '/campaigns',
-    disabled: false,
-    badge: campaignStats.value.total > 0 ? `${campaignStats.value.total}` : null,
-    badgeColor: 'success'
-  },
-  {
-    title: 'Contactos',
-    description: 'Administrar contactos',
-    icon: 'mdi-contacts',
-    color: 'info',
-    to: '/contacts',
-    disabled: false
-  },
-  {
-    title: 'Configuración',
-    description: 'Ajustes del sistema',
-    icon: 'mdi-cog',
-    color: 'warning',
-    to: '/settings',
-    disabled: false
-  }
-])
+const quickActions = computed(() => {
+  const statData = campaignStats.value || {}
+  return [
+    {
+      title: 'Nueva Campaña',
+      description: 'Crear y enviar mensajes',
+      icon: 'mdi-send',
+      color: 'primary',
+      to: '/campaigns/new',
+      disabled: false,
+      badge: 'Nuevo',
+      badgeColor: 'primary'
+    },
+    {
+      title: 'Ver Campañas',
+      description: 'Gestionar campañas existentes',
+      icon: 'mdi-email-multiple',
+      color: 'success',
+      to: '/campaigns',
+      disabled: false,
+      badge: statData.total > 0 ? `${statData.total}` : null,
+      badgeColor: 'success'
+    },
+    {
+      title: 'Contactos',
+      description: 'Administrar contactos',
+      icon: 'mdi-contacts',
+      color: 'info',
+      to: '/contacts',
+      disabled: false
+    },
+    {
+      title: 'Configuración',
+      description: 'Ajustes del sistema',
+      icon: 'mdi-cog',
+      color: 'warning',
+      to: '/settings',
+      disabled: false
+    }
+  ]
+})
 
 // Métodos
 const getStatusColor = (status) => {
@@ -343,12 +349,23 @@ const loadCampaignStats = async () => {
     console.log('[Dashboard] Cargando estadísticas de campañas...')
     
     const stats = await store.dispatch('campaigns/fetchCampaignStats')
-    campaignStats.value = stats
+    campaignStats.value = stats || {
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      failed: 0
+    }
     
     console.log('[Dashboard] Estadísticas cargadas:', stats)
   } catch (error) {
     console.error('[Dashboard] Error cargando estadísticas:', error)
-    // No mostrar error al usuario para estadísticas
+    // Establecer valores por defecto si hay error
+    campaignStats.value = {
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      failed: 0
+    }
   } finally {
     loadingCampaigns.value = false
   }

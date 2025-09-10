@@ -70,6 +70,11 @@ const menuItems = [
     to: '/dashboard'
   },
   {
+    title: 'Envío Masivo',
+    icon: 'mdi-send-outline',
+    to: '/messages'
+  },
+  {
     title: 'Nueva Campaña',
     icon: 'mdi-send',
     to: '/campaigns/new'

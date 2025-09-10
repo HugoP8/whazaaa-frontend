@@ -148,6 +148,18 @@
                 <!-- Grupos -->
                 <v-window-item value="groups">
                   <div class="mt-4">
+                    <v-alert
+                      type="warning"
+                      variant="tonal"
+                      density="compact"
+                      class="mb-4"
+                      v-if="hasGroupsWithoutParticipants"
+                    >
+                      <v-icon start>mdi-alert</v-icon>
+                      <strong>PROBLEMA:</strong> Los grupos no tienen datos de participantes desde el backend.
+                      <br><small>Revisa los logs de la consola para ver qué está llegando exactamente.</small>
+                    </v-alert>
+                    
                     <v-list
                       density="compact"
                       max-height="400"
@@ -170,7 +182,9 @@
                           {{ group.subject }}
                         </v-list-item-title>
                         <v-list-item-subtitle>
-                          {{ group.participants?.length || 0 }} participantes
+                          <strong>Participantes del backend:</strong> {{ group.participantJids?.length || group.participants || 0 }}
+                          <br>
+                          <small class="text-grey">ID: {{ group.id }}</small>
                         </v-list-item-subtitle>
                       </v-list-item>
                     </v-list>
@@ -200,6 +214,23 @@
                 density="compact"
               >
                 Total destinatarios: <strong>{{ totalRecipients }}</strong>
+              </v-alert>
+              
+              <!-- Alerta cuando no hay participantes REALES en los grupos -->
+              <v-alert
+                v-if="hasGroupsWithoutParticipants"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="mt-2"
+              >
+                <v-icon start>mdi-alert-circle</v-icon>
+                <strong>ERROR:</strong> Los grupos no tienen información de participantes del backend.
+                <br>
+                <small class="text-caption">
+                  El backend debe cargar <code>group.participants</code> desde WhatsApp.
+                  Revisa los logs de la consola para ver la estructura exacta.
+                </small>
               </v-alert>
             </v-card-text>
           </v-card>
@@ -240,7 +271,7 @@ import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import * as validators from '@/utils/validators'
-import { MESSAGE_DELAY_OPTIONS, FILE_SIZE_LIMIT, ALLOWED_FILE_TYPES } from '@/utils/constants'
+import { MESSAGE_LIMITS, FILE_LIMITS } from '@/utils/constants'
 
 const store = useStore()
 const router = useRouter()
@@ -278,11 +309,37 @@ const filteredContacts = computed(() => {
 const totalRecipients = computed(() => {
   let total = selectedContacts.value.length
   
-  // Agregar participantes de grupos
+  console.log('[NewCampaign] Calculando destinatarios:')
+  console.log('- Contactos seleccionados:', selectedContacts.value.length)
+  console.log('- Grupos seleccionados:', selectedGroups.value.length)
+  console.log('- Total grupos disponibles:', groups.value.length)
+  
+  // Agregar participantes de grupos - CONTAR PARTICIPANTES (mensaje irá al grupo, no individual)
   selectedGroups.value.forEach(groupId => {
     const group = groups.value.find(g => g.id === groupId)
     if (group) {
-      total += group.participants?.length || 0
+      // CONTAR participantes para mostrar al usuario cuántas personas recibirán el mensaje
+      // Nota: El mensaje se enviará al GRUPO, no a cada participante individualmente
+      const participantCount = group.participantJids?.length || group.participants || 0
+      
+      console.log(`🔍 GRUPO COMPLETO:`, group)
+      console.log(`📊 participantJids:`, group.participantJids)
+      
+      // Para obtener los números de teléfono:
+      const phoneNumbers = group.participantJids?.map(jid => {
+        // Convertir JID a número de teléfono
+        return jid.includes('@s.whatsapp.net') ? jid.split('@')[0] : null;
+      }).filter(Boolean) || [];
+      
+      console.log(`📞 Números del grupo ${group.subject}:`, phoneNumbers)
+      console.log(`🔍 GRUPO ${group.subject}:`)
+      console.log(`  - participantJids.length: ${group.participantJids?.length || 'undefined'}`)
+      console.log(`  - participants (fallback): ${group.participants || 'undefined'}`) 
+      console.log(`  - USANDO: ${participantCount} (de participantJids)`)
+      
+      total += participantCount
+    } else {
+      console.log(`❌ Grupo ${groupId} no encontrado`)
     }
   })
   
@@ -290,30 +347,75 @@ const totalRecipients = computed(() => {
   if (manualNumbers.value) {
     const numbers = manualNumbers.value.split('\n').filter(n => n.trim())
     total += numbers.length
+    console.log('- Números manuales:', numbers.length)
   }
   
+  console.log('- TOTAL DESTINATARIOS:', total)
   return total
 })
 
-const delayOptions = MESSAGE_DELAY_OPTIONS
+// Detectar grupos sin información de participantes
+const hasGroupsWithoutParticipants = computed(() => {
+  return groups.value.length > 0 && groups.value.some(group => 
+    (!group.participantJids || group.participantJids.length === 0) && (!group.participants || group.participants === 0)
+  )
+})
+
+// ❌ ELIMINÉ TODAS LAS FUNCIONES DE ESTIMACIÓN - SOLO DATOS REALES
+
+const delayOptions = [
+  { text: '1 segundo', value: 1000 },
+  { text: '2 segundos', value: 2000 },
+  { text: '3 segundos', value: 3000 },
+  { text: '5 segundos', value: 5000 },
+  { text: '10 segundos', value: 10000 },
+  { text: '15 segundos', value: 15000 },
+  { text: '30 segundos', value: 30000 },
+  { text: '1 minuto', value: 60000 }
+]
 
 const rules = {
   required: validators.required,
   campaignName: validators.campaignName,
   messageContent: validators.messageContent,
-  fileSize: validators.fileSize(FILE_SIZE_LIMIT),
-  fileType: validators.fileType(ALLOWED_FILE_TYPES)
+  fileSize: validators.fileSize(FILE_LIMITS.MAX_SIZE),
+  fileType: (files) => {
+    if (!files || files.length === 0) return true
+    const file = files[0]
+    const allowedTypes = [
+      ...FILE_LIMITS.ALLOWED_TYPES.IMAGE.map(ext => `image/${ext}`),
+      ...FILE_LIMITS.ALLOWED_TYPES.DOCUMENT.map(ext => `application/${ext}`),
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ]
+    const extension = file.name.split('.').pop().toLowerCase()
+    const isAllowed = Object.values(FILE_LIMITS.ALLOWED_TYPES).flat().includes(extension)
+    return isAllowed || 'Tipo de archivo no permitido'
+  }
 }
 
 const handleSubmit = async () => {
   if (!valid.value) return
   
+  // Verificar que WhatsApp esté conectado
+  if (!store.getters['whatsapp/isConnected']) {
+    toast.error('WhatsApp no está conectado. Conecta primero.')
+    return
+  }
+  
+  if (totalRecipients.value === 0) {
+    toast.error('Debes seleccionar al menos un destinatario')
+    return
+  }
+  
   loading.value = true
   
   try {
-    // Preparar destinatarios
-    const recipients = [...selectedContacts.value]
+    // Preparar destinatarios de contactos individuales
+    const contactRecipients = [...selectedContacts.value]
     
+    // Agregar números manuales como contactos
     if (manualNumbers.value) {
       const numbers = manualNumbers.value
         .split('\n')
@@ -323,31 +425,137 @@ const handleSubmit = async () => {
           // Agregar formato WhatsApp si no lo tiene
           return cleaned.includes('@') ? cleaned : `${cleaned}@s.whatsapp.net`
         })
-      recipients.push(...numbers)
+      contactRecipients.push(...numbers)
     }
     
-    const campaignData = {
-      name: campaign.value.name,
-      message: campaign.value.message,
-      recipients,
-      groupIds: selectedGroups.value,
-      delay: campaign.value.delay,
-      media: campaign.value.media
+    // Preparar destinatarios de grupos (usar ID de grupo, no participantes)
+    const groupRecipients = selectedGroups.value.map(groupId => {
+      const group = groups.value.find(g => g.id === groupId)
+      if (group) {
+        console.log(`📋 Agregando grupo: ${group.subject} (ID: ${groupId})`)
+        return groupId // Usar el ID del grupo directamente
+      } else {
+        console.warn(`⚠️ Grupo ${groupId} no encontrado`)
+        return null
+      }
+    }).filter(Boolean)
+    
+    console.log(`👥 Contactos individuales: ${contactRecipients.length}`)
+    console.log(`📱 Grupos seleccionados: ${groupRecipients.length}`)
+    console.log(`📧 Grupos:`, groupRecipients)
+    
+    // Determinar el tipo de campaña y destinatarios
+    let campaignData
+    
+    if (groupRecipients.length > 0 && contactRecipients.length === 0) {
+      // Solo grupos
+      campaignData = {
+        name: campaign.value.name,
+        message: campaign.value.message,
+        recipients: groupRecipients, // IDs de grupos
+        type: 'groups',
+        delay: campaign.value.delay,
+        media: campaign.value.media
+      }
+      console.log(`📢 Campaña de GRUPOS: ${groupRecipients.length} grupos`)
+      
+    } else if (contactRecipients.length > 0 && groupRecipients.length === 0) {
+      // Solo contactos
+      campaignData = {
+        name: campaign.value.name,
+        message: campaign.value.message,
+        recipients: contactRecipients, // JIDs de contactos
+        type: 'contacts',
+        delay: campaign.value.delay,
+        media: campaign.value.media
+      }
+      console.log(`📞 Campaña de CONTACTOS: ${contactRecipients.length} contactos`)
+      
+    } else if (groupRecipients.length > 0 && contactRecipients.length > 0) {
+      // Mixta (crear dos campañas separadas o manejar en backend)
+      // Por ahora, crear campaña mixta pero enviar en recipients
+      campaignData = {
+        name: campaign.value.name,
+        message: campaign.value.message,
+        recipients: [...contactRecipients, ...groupRecipients], // Mezclar ambos
+        type: 'mixed',
+        contactRecipients,
+        groupRecipients,
+        delay: campaign.value.delay,
+        media: campaign.value.media
+      }
+      console.log(`🔄 Campaña MIXTA: ${contactRecipients.length} contactos + ${groupRecipients.length} grupos`)
+      
+    } else {
+      throw new Error('No se han seleccionado destinatarios válidos')
     }
     
-    await store.dispatch('campaigns/createCampaign', campaignData)
-    router.push('/campaigns')
+    // Usar la nueva acción del store WhatsApp
+    const result = await store.dispatch('whatsapp/createCampaign', campaignData)
+    
+    if (result && result.id) {
+      // Ejecutar la campaña inmediatamente
+      try {
+        await store.dispatch('whatsapp/executeCampaign', result.id)
+        toast.success(`Campaña "${campaign.value.name}" creada y ejecutándose`)
+      } catch (executeError) {
+        console.error('Error ejecutando campaña:', executeError)
+        toast.warning(`Campaña creada pero error al ejecutar: ${executeError.message}`)
+      }
+    }
+    
+    // Dar tiempo para que se actualice el store antes de navegar
+    setTimeout(() => {
+      router.push('/campaigns')
+    }, 100)
     
   } catch (error) {
     console.error('Error creando campaña:', error)
+    toast.error(error.message || 'Error al crear la campaña')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  console.log('[NewCampaign] Componente montado')
+  
   // Cargar contactos y grupos
-  store.dispatch('whatsapp/fetchContacts')
-  store.dispatch('whatsapp/fetchGroups')
+  try {
+    await store.dispatch('whatsapp/fetchContacts')
+    console.log('[NewCampaign] Contactos cargados:', contacts.value.length)
+  } catch (error) {
+    console.error('[NewCampaign] Error cargando contactos:', error)
+  }
+  
+  try {
+    await store.dispatch('whatsapp/fetchGroups')
+    console.log('[NewCampaign] Grupos cargados:', groups.value.length)
+    
+    // Mostrar estructura de los primeros 3 grupos para depuración
+    groups.value.slice(0, 3).forEach((group, index) => {
+      console.log(`[NewCampaign] Grupo ${index + 1}:`, {
+        id: group.id,
+        name: group.subject || group.name,
+        participantJids: group.participantJids?.length || 'No participantJids',
+        participants: group.participants?.length || group.participants || 'No participants',
+        members: group.members?.length || 'No members', 
+        size: group.size || 'No size',
+        structure: Object.keys(group)
+      })
+    })
+    
+    // Verificar si hay grupos sin participantes
+    const groupsWithoutParticipants = groups.value.filter(group => 
+      (!group.participantJids || group.participantJids.length === 0) && (!group.participants || group.participants === 0)
+    ).length
+    
+    if (groupsWithoutParticipants > 0) {
+      console.warn(`[NewCampaign] ⚠️ ${groupsWithoutParticipants}/${groups.value.length} grupos no tienen información de participantes`)
+      console.warn('[NewCampaign] 🔧 Esto es un problema del BACKEND - necesita cargar participants de WhatsApp')
+    }
+  } catch (error) {
+    console.error('[NewCampaign] Error cargando grupos:', error)
+  }
 })
 </script>
