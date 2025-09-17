@@ -132,10 +132,18 @@ const actions = {
       console.log('[Campaigns Store] Obteniendo campaña:', campaignId)
       const response = await api.get(`/campaigns/${campaignId}`)
       
-      const campaign = response.data.data
+      console.log('[Campaigns Store] Respuesta completa para campaña:', response.data)
+      
+      // Intentar diferentes estructuras de respuesta
+      const campaign = response.data.data || response.data || response
+      
+      if (!campaign) {
+        throw new Error('Campaña no encontrada en la respuesta')
+      }
+      
       commit('SET_CURRENT_CAMPAIGN', campaign)
       
-      console.log('[Campaigns Store] Campaña obtenida:', campaign.name)
+      console.log('[Campaigns Store] Campaña obtenida:', campaign.name || campaign.id || 'Sin nombre')
       return campaign
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo campaña:', error)
@@ -354,6 +362,110 @@ const actions = {
   // Limpiar campaña actual
   clearCurrentCampaign({ commit }) {
     commit('SET_CURRENT_CAMPAIGN', null)
+  },
+
+  // Obtener campaña por ID (alias para fetchCampaign)
+  async fetchCampaignById({ dispatch }, campaignId) {
+    return await dispatch('fetchCampaign', campaignId)
+  },
+
+  // Obtener datos para reutilizar campaña
+  async getCampaignReuseData({ commit }, campaignId) {
+    try {
+      console.log('[Campaigns Store] Obteniendo datos de reutilización para campaña:', campaignId)
+      const response = await api.get(`/campaigns/${campaignId}/reuse-data`)
+      
+      console.log('[Campaigns Store] Datos de reutilización obtenidos:', response.data)
+      return response.data.data || response.data
+    } catch (error) {
+      console.error('[Campaigns Store] Error obteniendo datos de reutilización:', error)
+      const errorMessage = error.response?.data?.message || error.message || 'Error al obtener datos de reutilización'
+      commit('SET_ERROR', errorMessage)
+      toast.error(errorMessage)
+      throw error
+    }
+  },
+
+  // Crear campaña desde datos reutilizados
+  async createCampaignFromReuse({ commit, dispatch }, reuseData) {
+    commit('SET_LOADING', true)
+    commit('SET_ERROR', null)
+    
+    try {
+      console.log('[Campaigns Store] Creando campaña reutilizada:', reuseData)
+      
+      const formData = new FormData()
+
+      // Datos básicos
+      formData.append('name', reuseData.name)
+      formData.append('message', reuseData.message)
+      formData.append('recipients', JSON.stringify(reuseData.recipients))
+      formData.append('type', reuseData.type)
+
+      // Media existente
+      if (reuseData.mediaPath) {
+        formData.append('mediaPath', reuseData.mediaPath)
+      }
+
+      // Nuevo archivo
+      if (reuseData.newFile) {
+        formData.append('media', reuseData.newFile)
+      }
+
+      const response = await api.post('/campaigns/reuse', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+
+      const newCampaign = response.data.data || response.data
+      commit('ADD_CAMPAIGN', newCampaign)
+      
+      console.log('[Campaigns Store] Campaña reutilizada creada:', newCampaign.id)
+      
+      // Refrescar la lista de campañas
+      await dispatch('fetchCampaigns')
+
+      return newCampaign
+    } catch (error) {
+      console.error('[Campaigns Store] Error creando campaña reutilizada:', error)
+      const errorMessage = error.response?.data?.message || error.message || 'Error al crear campaña reutilizada'
+      commit('SET_ERROR', errorMessage)
+      toast.error(errorMessage)
+      throw error
+    } finally {
+      commit('SET_LOADING', false)
+    }
+  },
+
+  // Reenviar campaña existente
+  async resendCampaign({ commit, dispatch }, campaignId) {
+    commit('SET_LOADING', true)
+    commit('SET_ERROR', null)
+    
+    try {
+      console.log('[Campaigns Store] Reenviando campaña:', campaignId)
+      const response = await api.post(`/campaigns/${campaignId}/resend`)
+      
+      const resentCampaign = response.data.data || response.data
+      commit('ADD_CAMPAIGN', resentCampaign)
+      
+      toast.success(`Campaña reenviada: ${resentCampaign.name}`)
+      console.log('[Campaigns Store] Campaña reenviada:', resentCampaign.id)
+      
+      // Refrescar la lista de campañas
+      await dispatch('fetchCampaigns')
+      
+      return response.data
+    } catch (error) {
+      console.error('[Campaigns Store] Error reenviando campaña:', error)
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Error al reenviar campaña'
+      commit('SET_ERROR', errorMessage)
+      toast.error(errorMessage)
+      throw error
+    } finally {
+      commit('SET_LOADING', false)
+    }
   },
 
   // Duplicar campaña

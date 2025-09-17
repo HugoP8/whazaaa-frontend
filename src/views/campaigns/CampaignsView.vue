@@ -117,11 +117,11 @@
               <v-btn
                 icon
                 size="small"
-                color="primary"
-                @click="duplicateCampaign(item)"
-                title="Duplicar campaña"
+                color="success"
+                @click="openReuseModal(item)"
+                title="Reutilizar campaña"
               >
-                <v-icon>mdi-content-copy</v-icon>
+                <v-icon>mdi-recycle</v-icon>
               </v-btn>
               
               <v-btn
@@ -173,6 +173,14 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+    
+    <!-- Modal de reutilización -->
+    <ReuseCampaignModal 
+      :is-open="showReuseModal"
+      :campaign-id="selectedCampaignId"
+      @close="closeReuseModal"
+      @success="onReuseSuccess"
+    />
   </div>
 </template>
 
@@ -192,6 +200,7 @@ import {
   formatCampaignDate,
   getCampaignTypeIcon
 } from '@/utils/campaignUtils'
+import ReuseCampaignModal from '@/components/campaigns/ReuseCampaignModal.vue'
 import dayjs from 'dayjs'
 
 const store = useStore()
@@ -203,8 +212,10 @@ const sortBy = ref('createdAt')
 const deleteDialog = ref(false)
 const selectedCampaign = ref(null)
 const deleting = ref(false)
+const showReuseModal = ref(false)
+const selectedCampaignId = ref(null)
 
-const loading = computed(() => store.getters['campaigns/campaignsLoading'])
+const loading = computed(() => store.getters['campaigns/loading'])
 const campaigns = computed(() => store.getters['campaigns/campaigns'])
 
 const headers = [
@@ -280,16 +291,19 @@ const viewDetails = (campaign) => {
   router.push(`/campaigns/${campaign.id}`)
 }
 
-const duplicateCampaign = async (campaign) => {
-  try {
-    const newName = `${campaign.name} (Copia)`
-    await store.dispatch('campaigns/duplicateCampaign', { 
-      campaignId: campaign.id, 
-      newName 
-    })
-  } catch (error) {
-    console.error('Error duplicando campaña:', error)
-  }
+const openReuseModal = (campaign) => {
+  selectedCampaignId.value = campaign.id
+  showReuseModal.value = true
+}
+
+const closeReuseModal = () => {
+  showReuseModal.value = false
+  selectedCampaignId.value = null
+}
+
+const onReuseSuccess = () => {
+  console.log('[CampaignsView] Campaña reutilizada con éxito')
+  // La lista se actualizará automáticamente gracias al store
 }
 
 const confirmDelete = (campaign) => {

@@ -16,9 +16,33 @@
           <v-chip
             :color="getStatusColor(campaign.campaign.status)"
             size="large"
+            class="mr-4"
           >
             {{ getStatusLabel(campaign.campaign.status) }}
           </v-chip>
+          
+          <!-- Botones de acción -->
+          <div class="d-flex gap-2">
+            <v-btn
+              color="warning"
+              variant="flat"
+              @click="resendCampaign"
+              :loading="isResending"
+              :disabled="isResending"
+            >
+              <v-icon start>mdi-send</v-icon>
+              {{ isResending ? 'Reenviando...' : 'Reenviar Campaña' }}
+            </v-btn>
+            
+            <v-btn
+              color="success"
+              variant="outlined"
+              @click="openReuseModal"
+            >
+              <v-icon start>mdi-recycle</v-icon>
+              Reutilizar
+            </v-btn>
+          </div>
         </div>
       </v-col>
     </v-row>
@@ -202,6 +226,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { CAMPAIGN_STATUS_COLORS, CAMPAIGN_STATUS_LABELS } from '@/utils/constants'
+import { useToast } from 'vue-toastification'
 import dayjs from 'dayjs'
 import durationPlugin from 'dayjs/plugin/duration'
 
@@ -209,8 +234,10 @@ dayjs.extend(durationPlugin)
 
 const route = useRoute()
 const store = useStore()
+const toast = useToast()
 
 const messageSearch = ref('')
+const isResending = ref(false)
 const campaign = computed(() => store.getters['campaigns/currentCampaign'])
 
 const messageHeaders = [
@@ -262,6 +289,42 @@ const formatDate = (date) => {
 
 const exportResults = () => {
   store.dispatch('campaigns/exportResults', route.params.id)
+}
+
+const resendCampaign = async () => {
+  if (!campaign.value?.campaign?.id) {
+    toast.error('No se puede reenviar: campaña no encontrada')
+    return
+  }
+
+  const confirmed = confirm('¿Estás seguro de reenviar esta campaña con las mismas configuraciones?')
+  if (!confirmed) return
+
+  isResending.value = true
+
+  try {
+    console.log('[CampaignDetailView] Reenviando campaña:', campaign.value.campaign.id)
+    const result = await store.dispatch('campaigns/resendCampaign', campaign.value.campaign.id)
+
+    toast.success(`¡Campaña reenviada exitosamente! Nueva campaña creada: ${result.data?.name || 'Sin nombre'}`)
+    
+    // Opcional: redirigir a la lista de campañas para ver la nueva campaña
+    // router.push('/campaigns')
+  } catch (error) {
+    console.error('[CampaignDetailView] Error reenviando campaña:', error)
+    toast.error(`Error al reenviar campaña: ${error.message}`)
+  } finally {
+    isResending.value = false
+  }
+}
+
+const openReuseModal = () => {
+  // TODO: Implementar modal de reutilización desde la vista de detalles
+  // Por ahora, redirigir a la lista donde ya está implementado
+  toast.info('Redirigiendo a la lista de campañas para reutilizar')
+  setTimeout(() => {
+    window.history.back()
+  }, 1000)
 }
 
 onMounted(() => {
