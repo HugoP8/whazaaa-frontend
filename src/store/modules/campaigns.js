@@ -1,5 +1,5 @@
 // src/store/modules/campaigns.js
-import api from '@/services/api'
+import api, { campaignAPI } from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { CAMPAIGN_STATUS } from '@/utils/constants'
 
@@ -10,6 +10,9 @@ const state = {
   currentCampaign: null,
   loading: false,
   error: null,
+  successMessage: null,
+  infoMessage: null,
+  reuseData: null,
   pagination: {
     page: 1,
     perPage: 20,
@@ -45,10 +48,23 @@ const mutations = {
     if (index !== -1) {
       state.campaigns.splice(index, 1, updatedCampaign)
     }
-    
+
     // Actualizar campaña actual si es la misma
     if (state.currentCampaign?.id === updatedCampaign.id) {
       state.currentCampaign = updatedCampaign
+    }
+  },
+
+  UPDATE_CAMPAIGN_STATUS(state, { campaignId, status }) {
+    console.log('[Campaigns Store] UPDATE_CAMPAIGN_STATUS:', campaignId, status)
+    const campaign = state.campaigns.find(c => c.id === campaignId)
+    if (campaign) {
+      campaign.status = status
+    }
+
+    // Actualizar campaña actual si coincide
+    if (state.currentCampaign?.id === campaignId) {
+      state.currentCampaign.status = status
     }
   },
   
@@ -83,6 +99,30 @@ const mutations = {
   },
   
   CLEAR_ERROR(state) {
+    state.error = null
+  },
+
+  SET_SUCCESS_MESSAGE(state, message) {
+    state.successMessage = message
+  },
+
+  SET_INFO_MESSAGE(state, message) {
+    state.infoMessage = message
+  },
+
+  SET_REUSE_DATA(state, data) {
+    console.log('[Campaigns Store] SET_REUSE_DATA:', data)
+    state.reuseData = data
+  },
+
+  CLEAR_REUSE_DATA(state) {
+    console.log('[Campaigns Store] CLEAR_REUSE_DATA')
+    state.reuseData = null
+  },
+
+  CLEAR_MESSAGES(state) {
+    state.successMessage = null
+    state.infoMessage = null
     state.error = null
   }
 }
@@ -315,23 +355,53 @@ const actions = {
     }
   },
   
-  // Obtener estadísticas de campañas
+  // Obtener estadísticas de campañas mejoradas
   async fetchCampaignStats({ commit }) {
     try {
-      console.log('[Campaigns Store] Obteniendo estadísticas de campañas')
+      console.log('[Campaigns Store] Obteniendo estadísticas mejoradas de campañas')
       const response = await api.get('/campaigns/stats')
-      
-      const stats = response.data.data
+
+      const stats = response.data.data || response.data
       console.log('[Campaigns Store] Estadísticas obtenidas:', stats)
-      
-      return stats
+
+      // Las estadísticas ahora incluyen todas las métricas y chartData para gráficos
+      return {
+        totalCampaigns: stats.totalCampaigns || 0,
+        completedCampaigns: stats.completedCampaigns || 0,
+        activeCampaigns: stats.activeCampaigns || 0,
+        pausedCampaigns: stats.pausedCampaigns || 0,
+        failedCampaigns: stats.failedCampaigns || 0,
+        messageStats: stats.messageStats || {
+          totalSent: 0,
+          successful: 0,
+          failed: 0
+        },
+        avgMessagesPerCampaign: stats.avgMessagesPerCampaign || 0,
+        totalContacts: stats.totalContacts || 0,
+        totalGroups: stats.totalGroups || 0,
+        lastCampaignDate: stats.lastCampaignDate || null,
+        chartData: stats.chartData || null,
+        ...stats
+      }
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo estadísticas:', error)
+      // Retornar estructura por defecto en caso de error
       return {
-        total: 0,
-        completed: 0,
-        inProgress: 0,
-        failed: 0
+        totalCampaigns: 0,
+        completedCampaigns: 0,
+        activeCampaigns: 0,
+        pausedCampaigns: 0,
+        failedCampaigns: 0,
+        messageStats: {
+          totalSent: 0,
+          successful: 0,
+          failed: 0
+        },
+        avgMessagesPerCampaign: 0,
+        totalContacts: 0,
+        totalGroups: 0,
+        lastCampaignDate: null,
+        chartData: null
       }
     }
   },
@@ -364,6 +434,11 @@ const actions = {
     commit('SET_CURRENT_CAMPAIGN', null)
   },
 
+  // Limpiar mensajes
+  clearMessages({ commit }) {
+    commit('CLEAR_MESSAGES')
+  },
+
   // Obtener campaña por ID (alias para fetchCampaign)
   async fetchCampaignById({ dispatch }, campaignId) {
     return await dispatch('fetchCampaign', campaignId)
@@ -387,81 +462,166 @@ const actions = {
   },
 
   // Crear campaña desde datos reutilizados
-  async createCampaignFromReuse({ commit, dispatch }, reuseData) {
+  async createCampaignFromReuse({ commit, dispatch }, { formData }) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Creando campaña reutilizada:', reuseData)
-      
-      const formData = new FormData()
+      console.log('🔄 [CAMPAIGNS STORE] === ENVIANDO CAMPAÑA REUTILIZADA ===')
 
-      // Datos básicos
-      formData.append('name', reuseData.name)
-      formData.append('message', reuseData.message)
-      formData.append('recipients', JSON.stringify(reuseData.recipients))
-      formData.append('type', reuseData.type)
-
-      // Media existente
-      if (reuseData.mediaPath) {
-        formData.append('mediaPath', reuseData.mediaPath)
-      }
-
-      // Nuevo archivo
-      if (reuseData.newFile) {
-        formData.append('media', reuseData.newFile)
+      // Log del FormData antes de enviar
+      console.log('🔄 [CAMPAIGNS STORE] FormData type:', formData.constructor.name)
+      console.log('🔄 [CAMPAIGNS STORE] FormData entries:')
+      for (let [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`🔄 [CAMPAIGNS STORE] ${key}: FILE - "${value.name}" (${value.size} bytes, type: ${value.type})`)
+        } else {
+          console.log(`🔄 [CAMPAIGNS STORE] ${key}: "${value}"`)
+        }
       }
 
       const response = await api.post('/campaigns/reuse', formData, {
+        timeout: 60000, // 60 segundos
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       })
 
-      const newCampaign = response.data.data || response.data
-      commit('ADD_CAMPAIGN', newCampaign)
-      
-      console.log('[Campaigns Store] Campaña reutilizada creada:', newCampaign.id)
-      
-      // Refrescar la lista de campañas
-      await dispatch('fetchCampaigns')
+      console.log('[Campaigns Store] Respuesta recibida:', response.data)
 
-      return newCampaign
+      if (response.data.success) {
+        const { campaignId, async, totalRecipients, type } = response.data.data
+
+        // Si es asíncrona, mostrar mensaje y refrescar campañas
+        if (async) {
+          console.log(`[Campaigns Store] Campaña ${campaignId} iniciada en segundo plano`)
+
+          // Refrescar lista de campañas para mostrar la nueva
+          dispatch('fetchCampaigns', { page: 1, perPage: 20 })
+
+          return {
+            success: true,
+            async: true,
+            campaignId,
+            message: `Campaña iniciada con ${totalRecipients} destinatarios. El progreso se mostrará en tiempo real.`
+          }
+        }
+
+        return response.data
+      }
+
     } catch (error) {
       console.error('[Campaigns Store] Error creando campaña reutilizada:', error)
-      const errorMessage = error.response?.data?.message || error.message || 'Error al crear campaña reutilizada'
-      commit('SET_ERROR', errorMessage)
-      toast.error(errorMessage)
+
+      if (error.code === 'ECONNABORTED') {
+        // Timeout - la campaña probablemente se inició
+        console.log('[Campaigns Store] Timeout detectado - campaña puede estar ejecutándose')
+
+        // Refrescar campañas para ver si se creó
+        dispatch('fetchCampaigns', { page: 1, perPage: 20 })
+
+        return {
+          success: true,
+          async: true,
+          message: 'Campaña iniciada (timeout detectado). Revisa el progreso en la lista de campañas.'
+        }
+      }
+
+      commit('SET_ERROR', error.message || 'Error creating campaign')
       throw error
     } finally {
       commit('SET_LOADING', false)
     }
   },
 
-  // Reenviar campaña existente
-  async resendCampaign({ commit, dispatch }, campaignId) {
-    commit('SET_LOADING', true)
-    commit('SET_ERROR', null)
-    
+  // Cancelar campaña en progreso
+  async cancelCampaign({ commit }, campaignId) {
     try {
-      console.log('[Campaigns Store] Reenviando campaña:', campaignId)
-      const response = await api.post(`/campaigns/${campaignId}/resend`)
-      
-      const resentCampaign = response.data.data || response.data
-      commit('ADD_CAMPAIGN', resentCampaign)
-      
-      toast.success(`Campaña reenviada: ${resentCampaign.name}`)
-      console.log('[Campaigns Store] Campaña reenviada:', resentCampaign.id)
-      
-      // Refrescar la lista de campañas
-      await dispatch('fetchCampaigns')
-      
+      console.log('[Campaigns Store] Cancelando campaña:', campaignId)
+
+      const response = await api.post(`/campaigns/${campaignId}/cancel`, {
+        timeout: 30000
+      })
+
+      console.log('[Campaigns Store] Respuesta de cancelación:', response.data)
+
+      if (response.data.success) {
+        // Actualizar estado local inmediatamente
+        commit('UPDATE_CAMPAIGN_STATUS', {
+          campaignId,
+          status: 'CANCELLED'
+        })
+
+        return { success: true, message: response.data.message }
+      }
+
       return response.data
     } catch (error) {
-      console.error('[Campaigns Store] Error reenviando campaña:', error)
-      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Error al reenviar campaña'
+      console.error('[Campaigns Store] Error cancelando campaña:', error)
+      const errorMessage = error.response?.data?.message || error.message || 'Error al cancelar campaña'
       commit('SET_ERROR', errorMessage)
       toast.error(errorMessage)
+      throw error
+    }
+  },
+
+  // Reenviar campaña existente con timeout extendido
+  async resendCampaign({ commit, dispatch }, campaignId) {
+    try {
+      commit('SET_LOADING', true)
+      commit('CLEAR_MESSAGES')
+
+      console.log('[Campaigns Store] Reenviando campaña:', campaignId)
+
+      // Usar campaignAPI con timeout extendido para reenvíos
+      const response = await campaignAPI.post(`/campaigns/${campaignId}/resend`)
+
+      if (response.data.success) {
+        // Mostrar mensaje de éxito inmediato
+        commit('SET_SUCCESS_MESSAGE', response.data.message)
+        toast.success(response.data.message)
+
+        // Si es asíncrono, mostrar información adicional
+        if (response.data.data?.async) {
+          commit('SET_INFO_MESSAGE', response.data.data.note)
+          toast.info('Recibirás notificaciones del progreso en tiempo real', {
+            timeout: 8000
+          })
+        }
+
+        // Agregar la nueva campaña si existe
+        if (response.data.data?.campaign) {
+          commit('ADD_CAMPAIGN', response.data.data.campaign)
+        }
+
+        // Refrescar lista de campañas
+        await dispatch('fetchCampaigns')
+
+        return response.data
+      } else {
+        throw new Error(response.data.error || 'Error desconocido')
+      }
+
+    } catch (error) {
+      console.error('[Campaigns Store] Error reenviando campaña:', error)
+
+      // Manejar diferentes tipos de error
+      if (error.code === 'ECONNABORTED') {
+        const timeoutMessage = 'La operación está tomando más tiempo del esperado, pero puede estar procesándose en segundo plano'
+        commit('SET_INFO_MESSAGE', timeoutMessage)
+        toast.warning(timeoutMessage, { timeout: 10000 })
+      } else if (error.response?.status === 400 && error.response.data?.requiresConnection) {
+        commit('SET_ERROR', 'Necesitas conectar WhatsApp primero')
+        toast.error('Necesitas conectar WhatsApp antes de reenviar la campaña')
+      } else {
+        const errorMessage = error.response?.data?.error ||
+                            error.response?.data?.message ||
+                            error.message ||
+                            'Error al reenviar campaña'
+        commit('SET_ERROR', errorMessage)
+        toast.error(errorMessage)
+      }
+
       throw error
     } finally {
       commit('SET_LOADING', false)
@@ -572,12 +732,34 @@ const getters = {
     console.log('[Campaigns Store] getter filters:', state.filters)
     return state.filters
   },
+
+  // Datos de reutilización
+  reuseData: state => {
+    console.log('[Campaigns Store] getter reuseData:', state.reuseData)
+    return state.reuseData
+  },
   
   // Verificar si hay filtros activos
   hasActiveFilters: state => {
     const hasFilters = !!(state.filters.status || state.filters.search || state.filters.dateRange)
     console.log('[Campaigns Store] getter hasActiveFilters:', hasFilters)
     return hasFilters
+  },
+
+  // Mensajes del estado
+  successMessage: state => state.successMessage,
+  infoMessage: state => state.infoMessage,
+
+  // Campañas con estado extendido
+  campaignsWithStatus: state => {
+    return state.campaigns.map(campaign => ({
+      ...campaign,
+      isProcessing: campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING',
+      isAsync: (campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING') &&
+               (campaign.name.includes('(Reenviada)') ||
+                campaign.name.includes('(Copia)') ||
+                campaign.name.includes('(Reutilizada)'))
+    }))
   }
 }
 

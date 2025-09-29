@@ -222,8 +222,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { CAMPAIGN_STATUS_COLORS, CAMPAIGN_STATUS_LABELS } from '@/utils/constants'
 import { useToast } from 'vue-toastification'
@@ -233,6 +233,7 @@ import durationPlugin from 'dayjs/plugin/duration'
 dayjs.extend(durationPlugin)
 
 const route = useRoute()
+const router = useRouter()
 const store = useStore()
 const toast = useToast()
 
@@ -297,37 +298,166 @@ const resendCampaign = async () => {
     return
   }
 
-  const confirmed = confirm('¿Estás seguro de reenviar esta campaña con las mismas configuraciones?')
-  if (!confirmed) return
-
-  isResending.value = true
-
   try {
+    // Verificar conexión de WhatsApp primero
+    const whatsappStatus = await store.dispatch('whatsapp/checkStatus')
+    if (!whatsappStatus.connected) {
+      toast.error('Necesitas conectar WhatsApp antes de reenviar la campaña')
+      return
+    }
+
+    // Mostrar dialog de confirmación con Vuetify
+    const dialogElement = document.createElement('div')
+    document.body.appendChild(dialogElement)
+
+    const confirmed = window.confirm(`¿Estás seguro de que quieres reenviar esta campaña?
+
+Campaña: ${campaign.value.campaign.name}
+Destinatarios: ${campaign.value.campaign.totalRecipients}
+Tipo: ${campaign.value.campaign.type}
+
+Esta acción creará una nueva campaña y comenzará el envío inmediatamente.`)
+
+    if (!confirmed) {
+      document.body.removeChild(dialogElement)
+      return
+    }
+
+    // Mostrar loading
+    isResending.value = true
+
     console.log('[CampaignDetailView] Reenviando campaña:', campaign.value.campaign.id)
     const result = await store.dispatch('campaigns/resendCampaign', campaign.value.campaign.id)
 
-    toast.success(`¡Campaña reenviada exitosamente! Nueva campaña creada: ${result.data?.name || 'Sin nombre'}`)
-    
-    // Opcional: redirigir a la lista de campañas para ver la nueva campaña
-    // router.push('/campaigns')
+    // Manejar respuesta asíncrona
+    if (result.data?.async) {
+      toast.success('Reenvío iniciado correctamente')
+      toast.info('Recibirás notificaciones del progreso en tiempo real')
+
+      // Navegar a la nueva campaña creada si existe ID
+      if (result.data?.newCampaignId) {
+        await new Promise(resolve => setTimeout(resolve, 2000)) // Esperar 2 segundos
+        router.push(`/campaigns/${result.data.newCampaignId}`)
+      }
+    } else {
+      toast.success('Campaña reenviada exitosamente')
+    }
+
+    document.body.removeChild(dialogElement)
+
   } catch (error) {
-    console.error('[CampaignDetailView] Error reenviando campaña:', error)
-    toast.error(`Error al reenviar campaña: ${error.message}`)
+    console.error('[CampaignDetailView] Error al reenviar campaña:', error)
+
+    // El error ya fue manejado en el store, pero podemos mostrar información adicional
+    if (error.code === 'ECONNABORTED') {
+      toast.info('El reenvío puede estar procesándose en segundo plano', {
+        timeout: 10000
+      })
+    }
   } finally {
     isResending.value = false
   }
 }
 
-const openReuseModal = () => {
-  // TODO: Implementar modal de reutilización desde la vista de detalles
-  // Por ahora, redirigir a la lista donde ya está implementado
-  toast.info('Redirigiendo a la lista de campañas para reutilizar')
-  setTimeout(() => {
-    window.history.back()
-  }, 1000)
+const openReuseModal = async () => {
+  if (!campaign.value?.campaign?.id) {
+    toast.error('No se puede reutilizar: campaña no encontrada')
+    return
+  }
+
+  try {
+    console.log('[CampaignDetailView] Reutilizando campaña:', campaign.value.campaign.id)
+
+    // Obtener datos de reutilización
+    const response = await store.dispatch('campaigns/getCampaignReuseData', campaign.value.campaign.id)
+    console.log('[CampaignDetailView] Datos de reutilización obtenidos:', response)
+
+    // Guardar datos en el store para que NewCampaignView los use
+    store.commit('campaigns/SET_REUSE_DATA', response)
+
+    // Redirigir a nueva campaña con parámetro de reutilización
+    router.push({
+      path: '/campaigns/new',
+      query: {
+        reuse: campaign.value.campaign.id,
+        from: 'detail'
+      }
+    })
+
+  } catch (error) {
+    console.error('[CampaignDetailView] Error al obtener datos de reutilización:', error)
+    toast.error('Error al cargar datos para reutilizar la campaña')
+  }
+}
+
+// Configurar eventos de WebSocket para reenvíos y progreso
+const setupSocketEvents = () => {
+  const socket = store.state.whatsapp.socket
+  if (!socket) return
+
+  // Escuchar eventos de finalización de campaña
+  socket.on('campaign-completed', (data) => {
+    console.log('[CampaignDetailView] Campaña completada:', data)
+
+    if (data.resent) {
+      // Es un reenvío completado
+      toast.success(`Reenvío completado: ${data.successCount}/${data.totalCount} mensajes enviados`, {
+        timeout: 10000
+      })
+
+      // Actualizar campañas
+      store.dispatch('campaigns/fetchCampaigns')
+
+      // Si estamos en la página de la campaña original, refrescar
+      if (route.params.id == data.originalCampaignId) {
+        store.dispatch('campaigns/fetchCampaign', data.originalCampaignId)
+      }
+    }
+  })
+
+  // Escuchar errores de campaña
+  socket.on('campaign-error', (data) => {
+    console.log('[CampaignDetailView] Error en campaña:', data)
+    toast.error(`Error en reenvío de campaña: ${data.error}`)
+
+    // Actualizar campañas para reflejar el estado de error
+    store.dispatch('campaigns/fetchCampaigns')
+  })
+
+  // Escuchar progreso de campañas (incluso para reenvíos)
+  socket.on('campaign-progress', (data) => {
+    console.log('[CampaignDetailView] Progreso de campaña:', data)
+
+    // Mostrar progreso solo para campañas relevantes
+    if (data.campaignId == route.params.id || data.originalCampaignId == route.params.id) {
+      // Actualizar progreso en el store de whatsapp
+      store.commit('whatsapp/CAMPAIGN_PROGRESS', data)
+
+      // Mostrar toast con progreso cada cierto número de mensajes
+      if (data.sent % 10 === 0 || data.sent === data.total) {
+        toast.info(`Progreso: ${data.sent}/${data.total} (${Math.round(data.percentage)}%)`, {
+          timeout: 3000
+        })
+      }
+    }
+  })
+}
+
+const cleanupSocketEvents = () => {
+  const socket = store.state.whatsapp.socket
+  if (!socket) return
+
+  socket.off('campaign-completed')
+  socket.off('campaign-error')
+  socket.off('campaign-progress')
 }
 
 onMounted(() => {
   store.dispatch('campaigns/fetchCampaignById', route.params.id)
+  setupSocketEvents()
+})
+
+onUnmounted(() => {
+  cleanupSocketEvents()
 })
 </script>

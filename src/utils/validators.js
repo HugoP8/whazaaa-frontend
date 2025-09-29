@@ -23,12 +23,14 @@ export const phoneNumber = (value) => {
 export const fileSize = (maxSize) => (files) => {
   if (!files || files.length === 0) return true
   const file = files[0]
-  return file.size <= maxSize || `El archivo debe ser menor a ${maxSize / 1024 / 1024}MB`
+  if (!file || typeof file.size !== 'number') return true
+  return file.size <= maxSize || `El archivo debe ser menor a ${Math.round(maxSize / 1024 / 1024)}MB`
 }
 
 export const fileType = (allowedTypes) => (files) => {
   if (!files || files.length === 0) return true
   const file = files[0]
+  if (!file || !file.type) return true
   return allowedTypes.includes(file.type) || 'Tipo de archivo no permitido'
 }
 

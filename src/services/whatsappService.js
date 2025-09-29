@@ -2,6 +2,7 @@
 import { io } from 'socket.io-client'
 import api from './api'
 import { SOCKET_URL } from '@/utils/constants'
+import { mediaHandler } from '@/utils/mediaHandler'
 
 class WhatsAppService {
   constructor() {
@@ -13,24 +14,32 @@ class WhatsAppService {
   // Helper method para manejo mejorado de errores
   handleApiError(error, operation) {
     console.error(`[WhatsApp Service] Error ${operation}:`, error)
-    
+
     if (error.code === 'ECONNABORTED') {
-      throw new Error(`Timeout - ${operation} tardó demasiado`)
+      throw new Error(`Timeout - ${operation} tardó demasiado. La operación puede continuar en segundo plano.`)
     }
-    
+
     if (error.response?.status === 401) {
       throw new Error('Sesión expirada - Por favor inicia sesión nuevamente')
     }
-    
+
+    if (error.response?.status === 413) {
+      throw new Error('Archivo demasiado grande - Reduce el tamaño del archivo')
+    }
+
+    if (error.response?.status === 415) {
+      throw new Error('Tipo de archivo no soportado - Usa JPG, PNG, MP4 o PDF')
+    }
+
     if (error.response?.status === 503) {
       throw new Error('Servicio temporalmente no disponible - Intenta más tarde')
     }
-    
+
     if (error.response?.status >= 500) {
       throw new Error('Error del servidor - Intenta más tarde')
     }
-    
-    throw new Error(error.response?.data?.error || `Error al ${operation}`)
+
+    throw new Error(error.response?.data?.error || error.response?.data?.message || `Error al ${operation}`)
   }
 
   // 🔥 Método para obtener userId de múltiples fuentes
@@ -106,19 +115,34 @@ class WhatsAppService {
     this.socket.on('connect', () => {
       console.log('[WhatsApp Service] Socket conectado:', this.socket.id)
       this.connected = true
-      
-      // Unirse al room una sola vez
+
+      // Unirse al room del usuario
+      console.log(`[WhatsApp Service] Uniéndose a sala del usuario: user-${userId}`)
       this.socket.emit('join-user-room', userId)
+
+      // Verificar que el join fue exitoso (redundancia para asegurar conexión)
+      this.socket.emit('join', `user-${userId}`)
     })
 
     this.socket.on('disconnect', (reason) => {
       console.log('[WhatsApp Service] Socket desconectado:', reason)
       this.connected = false
-      
+
       // NO auto-reconectar en desarrollo para evitar loops con nodemon
       if (reason === 'io server disconnect' && process.env.NODE_ENV === 'production') {
         setTimeout(() => this.socket?.connect(), 3000)
       }
+    })
+
+    // Manejar reconexión exitosa
+    this.socket.on('reconnect', () => {
+      console.log('[WhatsApp Service] Socket reconectado exitosamente')
+      this.connected = true
+
+      // Re-unirse al room del usuario tras reconexión
+      console.log(`[WhatsApp Service] Re-uniéndose a sala del usuario tras reconexión: user-${userId}`)
+      this.socket.emit('join-user-room', userId)
+      this.socket.emit('join', `user-${userId}`)
     })
 
     this.socket.on('connect_error', (error) => {
@@ -156,6 +180,23 @@ class WhatsAppService {
     this.socket.on('campaign-progress', (data) => {
       console.log('[WhatsApp Service] Progreso de campaña:', data)
       if (handlers.onCampaignProgress) handlers.onCampaignProgress(data)
+    })
+
+    this.socket.on('connection-status', (status) => {
+      console.log('[WhatsApp Service] Estado de conexión:', status)
+      if (handlers.onConnectionStatus) {
+        handlers.onConnectionStatus(status)
+      }
+    })
+
+    this.socket.on('campaign-completed', (data) => {
+      console.log('[WhatsApp Service] Campaña completada:', data)
+      if (handlers.onCampaignCompleted) handlers.onCampaignCompleted(data)
+    })
+
+    this.socket.on('campaign-error', (data) => {
+      console.log('[WhatsApp Service] Error en campaña:', data)
+      if (handlers.onCampaignError) handlers.onCampaignError(data)
     })
 
     this.socket.on('whatsapp-error', (error) => {
@@ -339,33 +380,69 @@ class WhatsAppService {
     }
   }
 
-  // Crear campaña de mensajes
+  // Crear campaña de mensajes con manejo moderno de archivos
   async createCampaign(campaignData) {
     try {
-      console.log('[WhatsApp Service] Creando campaña:', campaignData.name)
-      const formData = new FormData()
-      
-      Object.keys(campaignData).forEach(key => {
-        if (key === 'recipients' || key === 'groupIds') {
-          formData.append(key, JSON.stringify(campaignData[key]))
-        } else if (key === 'media' && campaignData[key]) {
-          formData.append('media', campaignData[key])
-        } else {
-          formData.append(key, campaignData[key])
+      console.log('[WhatsApp Service] Creando campaña con datos:',
+        campaignData instanceof FormData ? 'FormData' : typeof campaignData)
+
+      let formData
+
+      // Si ya es FormData (viene del MediaHandler), usar directamente
+      if (campaignData instanceof FormData) {
+        formData = campaignData
+        console.log('[WhatsApp Service] Usando FormData existente del MediaHandler')
+      } else {
+        // Convertir objeto a FormData usando MediaHandler
+        console.log('[WhatsApp Service] Convirtiendo objeto a FormData:', Object.keys(campaignData))
+
+        // Extraer archivos del objeto si existen
+        let files = null
+        const cleanData = { ...campaignData }
+
+        if (campaignData.media) {
+          if (campaignData.media instanceof File) {
+            files = [campaignData.media]
+          } else if (campaignData.media instanceof FileList) {
+            files = Array.from(campaignData.media)
+          }
+          // Remover media del objeto para evitar duplicación
+          delete cleanData.media
         }
-      })
-      
+
+        // Crear FormData usando MediaHandler
+        formData = mediaHandler.createFormData(cleanData, files, {
+          fileFieldName: 'media'
+        })
+      }
+
+      // Enviar solicitud con configuración optimizada para archivos
       const response = await api.post('/campaigns', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
+        },
+        timeout: 120000, // 2 minutos para campañas con archivos grandes
+        maxContentLength: 50 * 1024 * 1024, // 50MB máximo
+        maxBodyLength: 50 * 1024 * 1024,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.lengthComputable) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            console.log(`[WhatsApp Service] Progreso de subida: ${percentCompleted}%`)
+          }
         }
       })
-      
-      console.log('[WhatsApp Service] Campaña creada:', response.data)
+
+      console.log('[WhatsApp Service] Campaña creada exitosamente:', response.data)
       return response.data
     } catch (error) {
       console.error('[WhatsApp Service] Error creando campaña:', error)
-      throw new Error(error.response?.data?.error || 'Error al crear campaña')
+
+      // Manejo específico de errores de archivos
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('La subida del archivo tardó demasiado. Verifica tu conexión y el tamaño del archivo.')
+      }
+
+      this.handleApiError(error, 'crear campaña')
     }
   }
 
@@ -455,6 +532,45 @@ class WhatsAppService {
       connected: this.connected,
       socketId: this.socket?.id,
       userId: this.userId
+    }
+  }
+
+  // Obtener diagnóstico del sistema
+  async getDiagnostic() {
+    try {
+      console.log('[WhatsApp Service] Obteniendo diagnóstico del sistema')
+      const response = await api.get('/whatsapp/diagnostic')
+      console.log('[WhatsApp Service] Diagnóstico obtenido:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('[WhatsApp Service] Error obteniendo diagnóstico:', error)
+      throw new Error(error.response?.data?.error || 'Error al obtener diagnóstico')
+    }
+  }
+
+  // Obtener estadísticas de campañas
+  async getCampaignStats() {
+    try {
+      console.log('[WhatsApp Service] Obteniendo estadísticas de campañas')
+      const response = await api.get('/campaigns/stats')
+      console.log('[WhatsApp Service] Estadísticas obtenidas:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('[WhatsApp Service] Error obteniendo estadísticas:', error)
+      throw new Error(error.response?.data?.error || 'Error al obtener estadísticas')
+    }
+  }
+
+  // Obtener datos para reutilizar campaña
+  async getCampaignReuseData(campaignId) {
+    try {
+      console.log('[WhatsApp Service] Obteniendo datos de reutilización para campaña:', campaignId)
+      const response = await api.get(`/campaigns/${campaignId}/reuse-data`)
+      console.log('[WhatsApp Service] Datos de reutilización obtenidos:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('[WhatsApp Service] Error obteniendo datos de reutilización:', error)
+      throw new Error(error.response?.data?.error || 'Error al obtener datos de reutilización')
     }
   }
 }

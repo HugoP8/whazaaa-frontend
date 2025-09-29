@@ -82,25 +82,91 @@
             
             <!-- Progreso -->
             <template v-slot:item.progress="{ item }">
-              <div v-if="item.total_recipients" style="min-width: 150px;">
-                <v-progress-linear
-                  :model-value="getProgress(item)"
-                  :color="getProgressColor(getProgress(item))"
-                  height="20"
-                  rounded
-                >
-                  <template v-slot:default>
-                    {{ item.sent_count || 0 }}/{{ item.total_recipients }}
-                    <small class="ml-1">({{ formatSuccessPercentage(item) }})</small>
-                  </template>
-                </v-progress-linear>
+              <div style="min-width: 200px;">
+                <!-- Campaña en progreso -->
+                <div v-if="item.status === 'IN_PROGRESS' && item.total_recipients" class="progress-container">
+                  <v-progress-linear
+                    :model-value="getProgressPercentage(item)"
+                    :color="getProgressColor(getProgressPercentage(item))"
+                    height="24"
+                    rounded
+                    striped
+                    class="mb-2"
+                    :class="{ 'progress-animated': item.status === 'IN_PROGRESS' }"
+                  >
+                    <template v-slot:default>
+                      <strong>
+                        {{ item.sent_count || 0 }}/{{ item.total_recipients }}
+                        ({{ getProgressPercentage(item) }}%)
+                      </strong>
+                    </template>
+                  </v-progress-linear>
+
+                  <!-- Botón cancelar para campañas en progreso -->
+                  <v-btn
+                    size="x-small"
+                    color="warning"
+                    variant="outlined"
+                    @click="cancelCampaign(item.id)"
+                    :disabled="cancellingCampaigns.includes(item.id)"
+                    :loading="cancellingCampaigns.includes(item.id)"
+                    class="mt-1"
+                  >
+                    <v-icon start size="small">mdi-stop</v-icon>
+                    {{ cancellingCampaigns.includes(item.id) ? 'Cancelando...' : 'Cancelar' }}
+                  </v-btn>
+                </div>
+
+                <!-- Estados finales -->
+                <div v-else-if="item.total_recipients">
+                  <v-chip
+                    :color="getStatusColor(item.status)"
+                    size="small"
+                    class="mb-1"
+                  >
+                    {{ getStatusLabel(item.status) }}
+                  </v-chip>
+
+                  <!-- Estadísticas finales mejoradas -->
+                  <div class="text-caption text-grey">
+                    📊 {{ item.sent_count || 0 }}/{{ item.total_recipients }} enviados
+                    <span v-if="item.success_percentage !== undefined && item.success_percentage !== null">
+                      ({{ item.success_percentage }}% éxito)
+                    </span>
+                    <span v-else-if="item.sent_count && item.total_recipients">
+                      ({{ Math.round((item.sent_count / item.total_recipients) * 100) }}% éxito)
+                    </span>
+                  </div>
+                </div>
+
+                <span v-else class="text-grey">-</span>
               </div>
-              <span v-else>-</span>
             </template>
             
             <!-- Fecha -->
             <template v-slot:item.createdAt="{ item }">
-              {{ formatDate(item.createdAt) }}
+              <div class="campaign-date">
+                <!-- Fecha principal usando display_date -->
+                <strong>{{ formatDate(item.display_date) }}</strong>
+
+                <!-- Mostrar tipo de fecha -->
+                <small class="text-grey d-block">
+                  <span v-if="item.completed_at">
+                    Completada: {{ formatDate(item.completed_at) }}
+                  </span>
+                  <span v-else-if="item.scheduled_at">
+                    Programada: {{ formatDate(item.scheduled_at) }}
+                  </span>
+                  <span v-else>
+                    Creada: {{ formatDate(item.created_at) }}
+                  </span>
+                </small>
+
+                <!-- Duración si existe -->
+                <small v-if="item.duration_seconds" class="text-info d-block">
+                  ⏱️ {{ formatDuration(item.duration_seconds) }}
+                </small>
+              </div>
             </template>
             
             <!-- Acciones -->
@@ -114,6 +180,7 @@
                 <v-icon>mdi-eye</v-icon>
               </v-btn>
               
+
               <v-btn
                 icon
                 size="small"
@@ -123,7 +190,7 @@
               >
                 <v-icon>mdi-recycle</v-icon>
               </v-btn>
-              
+
               <v-btn
                 icon
                 size="small"
@@ -188,6 +255,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toastification'
 import { 
   CAMPAIGN_STATUS, 
   CAMPAIGN_STATUS_LABELS, 
@@ -205,6 +273,7 @@ import dayjs from 'dayjs'
 
 const store = useStore()
 const router = useRouter()
+const toast = useToast()
 
 const search = ref('')
 const statusFilter = ref(null)
@@ -214,6 +283,7 @@ const selectedCampaign = ref(null)
 const deleting = ref(false)
 const showReuseModal = ref(false)
 const selectedCampaignId = ref(null)
+const cancellingCampaigns = ref([]) // Array de IDs de campañas siendo canceladas
 
 const loading = computed(() => store.getters['campaigns/loading'])
 const campaigns = computed(() => store.getters['campaigns/campaigns'])
@@ -283,8 +353,57 @@ const getProgress = (campaign) => {
   return (campaign.sent_count / campaign.total_recipients) * 100
 }
 
-const formatDate = (date) => {
-  return dayjs(date).format('DD/MM/YYYY HH:mm')
+const getProgressPercentage = (campaign) => {
+  if (!campaign.total_recipients || campaign.total_recipients === 0) {
+    return 0
+  }
+  return Math.round((campaign.sent_count / campaign.total_recipients) * 100)
+}
+
+const formatDate = (dateString) => {
+  console.log('🔍 [DEBUG] Fecha recibida:', dateString)
+
+  if (!dateString || dateString === null || dateString === 'null') {
+    console.warn('❌ Fecha inválida:', dateString)
+    return 'Sin fecha'
+  }
+
+  try {
+    const date = new Date(dateString)
+
+    // Verificar si la fecha es válida
+    if (isNaN(date.getTime())) {
+      console.warn('❌ Fecha no válida:', dateString)
+      return 'Fecha inválida'
+    }
+
+    return date.toLocaleString('es-ES', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch (error) {
+    console.error('❌ Error formateando fecha:', error)
+    return 'Error fecha'
+  }
+}
+
+const formatDuration = (seconds) => {
+  if (!seconds || seconds <= 0) return null
+
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`
+  } else {
+    return `${secs}s`
+  }
 }
 
 const viewDetails = (campaign) => {
@@ -323,9 +442,22 @@ const deleteCampaign = async () => {
   }
 }
 
-onMounted(() => {
-  store.dispatch('campaigns/fetchCampaigns')
-  
+onMounted(async () => {
+  const campaignsData = await store.dispatch('campaigns/fetchCampaigns')
+
+  // DEBUG: Ver qué datos llegan
+  console.log('🔍 [DEBUG] Campañas cargadas:', campaigns.value)
+  if (campaigns.value?.length > 0) {
+    console.log('🔍 [DEBUG] Primera campaña:', campaigns.value[0])
+    console.log('🔍 [DEBUG] Campos de fecha disponibles:', {
+      display_date: campaigns.value[0].display_date,
+      created_at: campaigns.value[0].created_at,
+      scheduled_at: campaigns.value[0].scheduled_at,
+      completed_at: campaigns.value[0].completed_at,
+      duration_seconds: campaigns.value[0].duration_seconds
+    })
+  }
+
   // Setup socket listeners for campaign updates
   const whatsappSocket = store.getters['whatsapp/socket']
   if (whatsappSocket) {
@@ -339,30 +471,186 @@ onUnmounted(() => {
   if (whatsappSocket) {
     whatsappSocket.off('campaign-completed')
     whatsappSocket.off('campaign-progress')
+    whatsappSocket.off('campaign-cancelled')
   }
 })
 
 const setupSocketListeners = (socket) => {
-  // Handle campaign completion
-  socket.on('campaign-completed', (data) => {
-    console.log('[CampaignsView] Campaign completed:', data)
-    
-    if (data.duplicated) {
-      console.log(`[CampaignsView] Campaña duplicada completada: ${data.successCount}/${data.totalCount} enviados`)
-    }
-    
-    // Refresh campaigns list
-    store.dispatch('campaigns/fetchCampaigns')
-  })
-  
   // Handle campaign progress updates
-  socket.on('campaign-progress', (data) => {
-    console.log(`[CampaignsView] Campaign progress: ${data.type === 'group' ? 'Grupo' : 'Contacto'}: ${data.sent}/${data.total}`)
-    
-    // Optionally update individual campaign in store
-    if (data.campaignId) {
-      store.dispatch('campaigns/fetchCampaignById', data.campaignId)
+  socket.on('campaign-progress', handleCampaignProgress)
+
+  // Handle campaign completion
+  socket.on('campaign-completed', handleCampaignCompleted)
+
+  // Handle campaign cancellation
+  socket.on('campaign-cancelled', handleCampaignCancelled)
+}
+
+const handleCampaignProgress = (data) => {
+  console.log(`[CampaignsView] Progreso: ${data.sent}/${data.total}`)
+
+  // Actualizar campaña en la lista
+  const campaign = campaigns.value.find(c => c.id == data.campaignId)
+  if (campaign) {
+    campaign.sent_count = data.sent
+    campaign.progress = data.percentage
+    campaign.status = 'IN_PROGRESS'
+
+    // Force reactivity update
+    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
+  }
+}
+
+const handleCampaignCompleted = (data) => {
+  console.log(`[CampaignsView] Completada: ${data.campaignId}`)
+
+  // Actualizar campaña como completada
+  const campaign = campaigns.value.find(c => c.id == data.campaignId)
+  if (campaign) {
+    campaign.status = 'COMPLETED'
+    campaign.sent_count = data.successCount
+    campaign.completed_at = new Date().toISOString()
+
+    // Force reactivity update
+    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
+  }
+
+  // Show success toast
+  toast.success(`Campaña completada: ${data.successCount}/${data.totalCount} enviados`)
+
+  // Refrescar después de 2 segundos para ver datos finales
+  setTimeout(() => {
+    refreshCampaignsList()
+  }, 2000)
+}
+
+const handleCampaignCancelled = (data) => {
+  console.log(`[CampaignsView] Cancelada: ${data.campaignId}`)
+
+  const campaign = campaigns.value.find(c => c.id == data.campaignId)
+  if (campaign) {
+    campaign.status = 'CANCELLED'
+
+    // Force reactivity update
+    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
+  }
+
+  toast.info('Campaña cancelada')
+}
+
+// Refrescar lista automáticamente
+const refreshCampaignsList = async () => {
+  try {
+    await store.dispatch('campaigns/fetchCampaigns')
+  } catch (error) {
+    console.error('Error refreshing campaigns:', error)
+  }
+}
+
+// Función para cancelar campaña
+const cancelCampaign = async (campaignId) => {
+  cancellingCampaigns.value.push(campaignId)
+
+  try {
+    // Usar la acción de WhatsApp que sí tiene el endpoint implementado
+    const response = await store.dispatch('whatsapp/cancelCampaign', campaignId)
+
+    if (response && response.success !== false) {
+      toast.success('Campaña cancelada exitosamente')
+
+      // Refrescar lista de campañas
+      refreshCampaignsList()
     }
-  })
+  } catch (error) {
+    console.error('Error cancelando campaña:', error)
+    toast.error(error.message || 'Error cancelando campaña')
+  } finally {
+    cancellingCampaigns.value = cancellingCampaigns.value.filter(id => id !== campaignId)
+  }
 }
 </script>
+
+<style scoped>
+/* Estados de campaña con bordes de color */
+.campaign-in-progress {
+  border-left: 4px solid #ffc107;
+  background-color: #fff9e7;
+}
+
+.campaign-completed {
+  border-left: 4px solid #28a745;
+}
+
+.campaign-cancelled {
+  border-left: 4px solid #6c757d;
+  opacity: 0.7;
+}
+
+/* Animaciones para progreso */
+.progress-animated {
+  animation: progress-pulse 2s ease-in-out infinite;
+}
+
+@keyframes progress-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+/* Efectos para barra de progreso */
+.v-progress-linear.progress-animated .v-progress-linear__buffer {
+  animation: progress-stripes 1s linear infinite;
+}
+
+@keyframes progress-stripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
+/* Mejoras visuales para progreso */
+.progress-container {
+  position: relative;
+}
+
+.progress-container .v-progress-linear {
+  background: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Estados de badge mejorados */
+.v-chip.badge-secondary {
+  background-color: #6c757d !important;
+  color: white !important;
+}
+
+/* Hover effects para botones de acción */
+.v-btn:hover {
+  transform: translateY(-1px);
+  transition: transform 0.2s ease;
+}
+
+/* Estilos para texto de duración */
+.text-grey {
+  color: #6c757d !important;
+  font-size: 0.75rem;
+}
+
+.text-info {
+  color: #17a2b8 !important;
+  font-size: 0.75rem;
+}
+
+/* Mejoras para la fecha de campaña */
+.campaign-date {
+  min-width: 140px;
+}
+
+/* Loading spinner personalizado */
+.mdi-loading {
+  animation: mdi-spin 1s linear infinite;
+}
+
+@keyframes mdi-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+</style>

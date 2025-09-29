@@ -11,8 +11,17 @@
             <v-icon>mdi-arrow-left</v-icon>
           </v-btn>
           <h1 class="text-h4 font-weight-bold">
-            Nueva Campaña
+            {{ isReusing ? 'Reutilizar Campaña' : 'Nueva Campaña' }}
           </h1>
+          <v-chip
+            v-if="isReusing"
+            color="success"
+            variant="tonal"
+            class="ml-3"
+          >
+            <v-icon start>mdi-recycle</v-icon>
+            Reutilizando
+          </v-chip>
         </div>
       </v-col>
     </v-row>
@@ -52,15 +61,64 @@
                 persistent-hint
                 class="mb-4"
               ></v-textarea>
-              
+
+              <!-- Archivo multimedia existente de reutilización -->
+              <v-card
+                v-if="showExistingMedia && existingMedia"
+                variant="outlined"
+                class="mb-4"
+              >
+                <v-card-subtitle>
+                  <v-icon class="mr-2">mdi-paperclip</v-icon>
+                  Archivo multimedia original
+                </v-card-subtitle>
+                <v-card-text>
+                  <div class="d-flex justify-space-between align-center">
+                    <div class="d-flex align-center">
+                      <v-icon class="mr-2" color="primary">mdi-file</v-icon>
+                      <span>{{ getFileName(existingMedia.path) }}</span>
+                      <v-chip
+                        size="small"
+                        :color="existingMedia.available ? 'success' : 'error'"
+                        variant="tonal"
+                        class="ml-2"
+                      >
+                        {{ existingMedia.available ? 'Disponible' : 'No disponible' }}
+                      </v-chip>
+                    </div>
+                    <v-btn
+                      size="small"
+                      color="error"
+                      variant="text"
+                      @click="removeExistingMedia"
+                    >
+                      <v-icon>mdi-delete</v-icon>
+                      Eliminar
+                    </v-btn>
+                  </div>
+
+                  <!-- Advertencia si el archivo no está disponible -->
+                  <v-alert
+                    v-if="!existingMedia.available"
+                    type="warning"
+                    variant="tonal"
+                    class="mt-3"
+                  >
+                    <v-icon start>mdi-alert</v-icon>
+                    El archivo original no está disponible. Por favor, sube un nuevo archivo.
+                  </v-alert>
+                </v-card-text>
+              </v-card>
+
               <v-file-input
                 v-model="campaign.media"
-                label="Archivo multimedia (opcional)"
+                :label="showExistingMedia ? 'Nuevo archivo multimedia (opcional)' : 'Archivo multimedia (opcional)'"
                 accept="image/*,video/*,.pdf,.doc,.docx"
                 prepend-icon="mdi-paperclip"
                 show-size
                 :rules="[rules.fileSize, rules.fileType]"
                 class="mb-4"
+                @update:model-value="handleFileChange"
               ></v-file-input>
               
               <v-select
@@ -268,13 +326,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import * as validators from '@/utils/validators'
 import { MESSAGE_LIMITS, FILE_LIMITS } from '@/utils/constants'
+import { mediaHandler, createFormDataWithMedia } from '@/utils/mediaHandler'
 
 const store = useStore()
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 
 const valid = ref(false)
@@ -293,8 +353,19 @@ const selectedContacts = ref([])
 const selectedGroups = ref([])
 const manualNumbers = ref('')
 
+// Estado para archivo multimedia existente de reutilización
+const existingMedia = ref(null)
+const showExistingMedia = ref(false)
+
 const contacts = computed(() => store.getters['whatsapp/contacts'])
 const groups = computed(() => store.getters['whatsapp/groups'])
+
+// Detectar si estamos reutilizando una campaña
+const isReusing = computed(() => {
+  return !!(route.query.reuse && store.getters['campaigns/reuseData'])
+})
+
+const reuseData = computed(() => store.getters['campaigns/reuseData'])
 
 const filteredContacts = computed(() => {
   if (!contactSearch.value) return contacts.value
@@ -382,16 +453,27 @@ const rules = {
   fileType: (files) => {
     if (!files || files.length === 0) return true
     const file = files[0]
-    const allowedTypes = [
-      ...FILE_LIMITS.ALLOWED_TYPES.IMAGE.map(ext => `image/${ext}`),
-      ...FILE_LIMITS.ALLOWED_TYPES.DOCUMENT.map(ext => `application/${ext}`),
+
+    // Verificar que el archivo sea válido
+    if (!file || !file.name || !file.type) return true
+
+    // Tipos MIME permitidos
+    const allowedMimeTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/avi', 'video/mov', 'video/quicktime',
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ]
-    const extension = file.name.split('.').pop().toLowerCase()
-    const isAllowed = Object.values(FILE_LIMITS.ALLOWED_TYPES).flat().includes(extension)
-    return isAllowed || 'Tipo de archivo no permitido'
+
+    // Extensiones permitidas como fallback
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'avi', 'mov', 'pdf', 'doc', 'docx']
+    const extension = file.name.split('.').pop()?.toLowerCase()
+
+    const isValidMimeType = allowedMimeTypes.includes(file.type)
+    const isValidExtension = extension && allowedExtensions.includes(extension)
+
+    return (isValidMimeType || isValidExtension) || 'Tipo de archivo no permitido. Usa JPG, PNG, MP4, PDF, DOC o DOCX'
   }
 }
 
@@ -445,47 +527,76 @@ const handleSubmit = async () => {
     console.log(`📧 Grupos:`, groupRecipients)
     
     // Determinar el tipo de campaña y destinatarios
+    const mediaInfo = getMediaForCampaign()
     let campaignData
-    
+
+    // Crear FormData usando el MediaHandler moderno
+    const createCampaignFormData = (baseData) => {
+      try {
+        // Preparar archivos para FormData
+        let files = null
+
+        if (mediaInfo?.type === 'new' && mediaInfo.file) {
+          console.log(`[NewCampaign] Procesando nuevo archivo:`, mediaInfo.file.name)
+          files = [mediaInfo.file]
+        }
+
+        // Agregar datos de archivo existente si aplica
+        if (mediaInfo?.type === 'existing' && mediaInfo.path) {
+          console.log(`[NewCampaign] Usando archivo existente:`, mediaInfo.path)
+          baseData.existingMediaPath = mediaInfo.path
+        }
+
+        // Crear FormData usando el MediaHandler
+        const formData = mediaHandler.createFormData(baseData, files, {
+          fileFieldName: 'media'
+        })
+
+        return formData
+      } catch (error) {
+        console.error('[NewCampaign] Error creando FormData:', error)
+        throw new Error(`Error procesando archivos: ${error.message}`)
+      }
+    }
+
     if (groupRecipients.length > 0 && contactRecipients.length === 0) {
       // Solo grupos
-      campaignData = {
+      const baseData = {
         name: campaign.value.name,
         message: campaign.value.message,
-        recipients: groupRecipients, // IDs de grupos
+        recipients: groupRecipients,
         type: 'groups',
-        delay: campaign.value.delay,
-        media: campaign.value.media
+        delay: campaign.value.delay
       }
+      campaignData = createCampaignFormData(baseData)
       console.log(`📢 Campaña de GRUPOS: ${groupRecipients.length} grupos`)
-      
+
     } else if (contactRecipients.length > 0 && groupRecipients.length === 0) {
       // Solo contactos
-      campaignData = {
+      const baseData = {
         name: campaign.value.name,
         message: campaign.value.message,
-        recipients: contactRecipients, // JIDs de contactos
+        recipients: contactRecipients,
         type: 'contacts',
-        delay: campaign.value.delay,
-        media: campaign.value.media
+        delay: campaign.value.delay
       }
+      campaignData = createCampaignFormData(baseData)
       console.log(`📞 Campaña de CONTACTOS: ${contactRecipients.length} contactos`)
-      
+
     } else if (groupRecipients.length > 0 && contactRecipients.length > 0) {
-      // Mixta (crear dos campañas separadas o manejar en backend)
-      // Por ahora, crear campaña mixta pero enviar en recipients
-      campaignData = {
+      // Mixta
+      const baseData = {
         name: campaign.value.name,
         message: campaign.value.message,
-        recipients: [...contactRecipients, ...groupRecipients], // Mezclar ambos
+        recipients: [...contactRecipients, ...groupRecipients],
         type: 'mixed',
         contactRecipients,
         groupRecipients,
-        delay: campaign.value.delay,
-        media: campaign.value.media
+        delay: campaign.value.delay
       }
+      campaignData = createCampaignFormData(baseData)
       console.log(`🔄 Campaña MIXTA: ${contactRecipients.length} contactos + ${groupRecipients.length} grupos`)
-      
+
     } else {
       throw new Error('No se han seleccionado destinatarios válidos')
     }
@@ -515,6 +626,64 @@ const handleSubmit = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// Funciones para manejar archivo multimedia existente
+const getFileName = (path) => {
+  if (!path) return ''
+  return path.split('/').pop() || path.split('\\').pop() || path
+}
+
+const removeExistingMedia = () => {
+  existingMedia.value = null
+  showExistingMedia.value = false
+  toast.info('Archivo original eliminado. Puedes subir uno nuevo.')
+}
+
+// Función para determinar qué archivo multimedia usar
+const getMediaForCampaign = () => {
+  console.log('[NewCampaign] getMediaForCampaign - Verificando archivos...')
+  console.log('[NewCampaign] campaign.value.media:', campaign.value.media)
+  console.log('[NewCampaign] campaign.value.media type:', typeof campaign.value.media)
+  console.log('[NewCampaign] campaign.value.media instanceof FileList:', campaign.value.media instanceof FileList)
+  console.log('[NewCampaign] campaign.value.media instanceof Array:', Array.isArray(campaign.value.media))
+
+  // Si hay un nuevo archivo subido, usar ese (será enviado como FormData)
+  // v-file-input puede almacenar como FileList, Array, o File individual
+  if (campaign.value.media) {
+    let file = null
+
+    if (campaign.value.media instanceof FileList && campaign.value.media.length > 0) {
+      file = campaign.value.media[0]
+      console.log('[NewCampaign] Archivo desde FileList:', file?.name)
+    } else if (Array.isArray(campaign.value.media) && campaign.value.media.length > 0) {
+      file = campaign.value.media[0]
+      console.log('[NewCampaign] Archivo desde Array:', file?.name)
+    } else if (campaign.value.media instanceof File) {
+      file = campaign.value.media
+      console.log('[NewCampaign] Archivo directo:', file?.name)
+    } else if (typeof campaign.value.media === 'object' && campaign.value.media[0]) {
+      file = campaign.value.media[0]
+      console.log('[NewCampaign] Archivo desde objeto [0]:', file?.name)
+    }
+
+    if (file && file instanceof File) {
+      console.log('[NewCampaign] ✅ Nuevo archivo detectado:', file.name, file.size, 'bytes')
+      return { type: 'new', file }
+    } else {
+      console.log('[NewCampaign] ❌ Archivo no válido:', file)
+    }
+  }
+
+  // Si hay archivo existente disponible y no se subió uno nuevo, usar el existente
+  if (showExistingMedia.value && existingMedia.value?.available) {
+    console.log('[NewCampaign] ✅ Usando archivo existente:', existingMedia.value.path)
+    return { type: 'existing', path: existingMedia.value.path }
+  }
+
+  // No hay archivo
+  console.log('[NewCampaign] ❌ No hay archivo multimedia')
+  return null
 }
 
 onMounted(async () => {
@@ -557,5 +726,147 @@ onMounted(async () => {
   } catch (error) {
     console.error('[NewCampaign] Error cargando grupos:', error)
   }
+
+  // Cargar datos de reutilización si corresponde
+  if (isReusing.value && reuseData.value) {
+    loadReuseData()
+  }
 })
+
+// Función para manejar cambios en el archivo usando el handler moderno
+const handleFileChange = async (files) => {
+  console.log('[NewCampaign] Archivo cambiado:', files)
+
+  // Verificar si hay archivos
+  if (!files || (Array.isArray(files) && files.length === 0)) {
+    console.log('[NewCampaign] No hay archivos seleccionados')
+    return
+  }
+
+  // Convertir a array si es necesario
+  let fileArray = files
+  if (files instanceof FileList) {
+    fileArray = Array.from(files)
+  } else if (!Array.isArray(files)) {
+    fileArray = [files]
+  }
+
+  // Filtrar archivos válidos (no undefined/null)
+  fileArray = fileArray.filter(file => file && file instanceof File)
+
+  if (fileArray.length === 0) {
+    console.log('[NewCampaign] No hay archivos válidos')
+    return
+  }
+
+  try {
+    console.log('[NewCampaign] Procesando archivos:', fileArray.length)
+
+    // Validar el primer archivo individualmente para evitar errores
+    const firstFile = fileArray[0]
+    console.log('[NewCampaign] Primer archivo:', {
+      name: firstFile.name,
+      size: firstFile.size,
+      type: firstFile.type
+    })
+
+    // Crear un MediaHandler sin toasts para evitar duplicados
+    const customMediaHandler = new (await import('@/utils/mediaHandler')).MediaHandler({
+      showToast: false
+    })
+    const validation = customMediaHandler.validateFiles(fileArray)
+
+    if (validation.isValid) {
+      console.log('[NewCampaign] Archivos válidos:', validation.validFiles)
+
+      // Generar preview si es una imagen
+      if (customMediaHandler.isImageFile(firstFile)) {
+        try {
+          const preview = await customMediaHandler.generatePreview(firstFile)
+          console.log('[NewCampaign] Preview generado:', preview.name)
+        } catch (error) {
+          console.warn('[NewCampaign] Error generando preview:', error)
+        }
+      }
+
+      toast.success(`Archivo "${firstFile.name}" seleccionado correctamente`)
+    } else {
+      console.error('[NewCampaign] Archivos inválidos:', validation.invalidFiles)
+      campaign.value.media = null
+    }
+  } catch (error) {
+    console.error('[NewCampaign] Error procesando archivos:', error)
+    toast.error(`Error procesando archivo: ${error.message}`)
+    campaign.value.media = null
+  }
+}
+
+// Función para cargar datos de reutilización
+const loadReuseData = () => {
+  const data = reuseData.value
+  if (!data) return
+
+  console.log('[NewCampaign] Cargando datos de reutilización:', data)
+
+  try {
+    // Cargar datos básicos de la campaña
+    if (data.campaignData) {
+      const originalName = data.metadata?.originalName || data.campaignData.name
+      campaign.value.name = `${originalName} (Reutilizada)`
+      campaign.value.message = data.campaignData.message || ''
+      campaign.value.delay = data.campaignData.delay || 5000
+
+      // Cargar archivo multimedia si existe
+      if (data.campaignData.mediaPath) {
+        console.log('[NewCampaign] Media path encontrado:', data.campaignData.mediaPath)
+
+        existingMedia.value = {
+          path: data.campaignData.mediaPath,
+          available: data.metadata?.mediaStatus === 'available'
+        }
+        showExistingMedia.value = true
+
+        if (!existingMedia.value.available) {
+          toast.warning('El archivo multimedia original no está disponible')
+        }
+      }
+
+      // Cargar destinatarios
+      if (data.campaignData.recipients && data.campaignData.recipients.length > 0) {
+        const recipients = data.campaignData.recipients
+
+        if (data.campaignData.type === 'groups') {
+          // Seleccionar grupos por ID
+          recipientTab.value = 'groups'
+          // Los checkboxes de grupos usan group.id como value
+          selectedGroups.value = recipients
+            .filter(r => r.jid && r.name)
+            .map(r => r.jid) // Usar el jid como ID del grupo
+          console.log('[NewCampaign] Grupos seleccionados:', selectedGroups.value)
+        } else {
+          // Seleccionar contactos por teléfono
+          recipientTab.value = 'contacts'
+          // Los checkboxes de contactos usan contact.phone como value
+          selectedContacts.value = recipients
+            .filter(r => r.jid && r.name)
+            .map(r => {
+              // El jid del contacto puede ser formato phone@c.us, extraer solo el número
+              const phone = r.jid.replace('@c.us', '').replace('@s.whatsapp.net', '')
+              return phone
+            })
+          console.log('[NewCampaign] Contactos seleccionados:', selectedContacts.value)
+        }
+      }
+
+      toast.success(`Datos de campaña "${originalName}" cargados exitosamente`)
+    }
+
+    // Limpiar datos de reutilización del store
+    store.commit('campaigns/CLEAR_REUSE_DATA')
+
+  } catch (error) {
+    console.error('[NewCampaign] Error cargando datos de reutilización:', error)
+    toast.error('Error al cargar datos de la campaña a reutilizar')
+  }
+}
 </script>
