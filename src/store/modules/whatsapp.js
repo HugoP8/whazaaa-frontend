@@ -64,7 +64,9 @@ const state = {
   connectionInfo: null,
   connectionError: null,
   cleanupSocket: null, // Store cleanup function
-  campaignProgress: null // Para tracking de progreso en tiempo real
+  campaignProgress: null, // Para tracking de progreso en tiempo real
+  todayMessagesCount: 0, // Contador de mensajes enviados hoy
+  monthlyLimit: 300 // Límite mensual de mensajes
 }
 
 const mutations = {
@@ -115,7 +117,8 @@ const mutations = {
   
   MESSAGE_SENT(state, data) {
     console.log('[WhatsApp Store] MESSAGE_SENT:', data)
-    // Aquí puedes actualizar estadísticas o emitir eventos
+    // Incrementar contador de mensajes del día
+    state.todayMessagesCount += 1
   },
   
   MESSAGE_FAILED(state, data) {
@@ -141,6 +144,21 @@ const mutations = {
       state.connected = false
     }
     state.connectionInfo = status
+  },
+
+  SET_TODAY_MESSAGES_COUNT(state, count) {
+    console.log('[WhatsApp Store] SET_TODAY_MESSAGES_COUNT:', count)
+    state.todayMessagesCount = count
+  },
+
+  INCREMENT_TODAY_MESSAGES(state) {
+    state.todayMessagesCount += 1
+    console.log('[WhatsApp Store] INCREMENT_TODAY_MESSAGES:', state.todayMessagesCount)
+  },
+
+  SET_MONTHLY_LIMIT(state, limit) {
+    console.log('[WhatsApp Store] SET_MONTHLY_LIMIT:', limit)
+    state.monthlyLimit = limit
   }
 }
 
@@ -647,6 +665,22 @@ const actions = {
       toast.error('Error al cancelar campaña')
       throw error
     }
+  },
+
+  async fetchTodayMessagesStats({ commit }) {
+    console.log('[WhatsApp Store] Obteniendo estadísticas de mensajes del día')
+    try {
+      const response = await whatsappService.getTodayStats()
+      commit('SET_TODAY_MESSAGES_COUNT', response.todayCount || 0)
+      if (response.monthlyLimit) {
+        commit('SET_MONTHLY_LIMIT', response.monthlyLimit)
+      }
+      return response
+    } catch (error) {
+      console.error('[WhatsApp Store] Error obteniendo estadísticas:', error)
+      // No mostrar toast error para no molestar al usuario
+      return { todayCount: 0 }
+    }
   }
 }
 
@@ -683,6 +717,22 @@ const getters = {
   campaignProgress: state => {
     console.log('[WhatsApp Store] getter campaignProgress:', state.campaignProgress)
     return state.campaignProgress
+  },
+
+  todayMessagesCount: state => {
+    console.log('[WhatsApp Store] getter todayMessagesCount:', state.todayMessagesCount)
+    return state.todayMessagesCount
+  },
+
+  monthlyLimit: state => {
+    console.log('[WhatsApp Store] getter monthlyLimit:', state.monthlyLimit)
+    return state.monthlyLimit
+  },
+
+  messagesProgress: state => {
+    const progress = state.monthlyLimit > 0 ? (state.todayMessagesCount / state.monthlyLimit) * 100 : 0
+    console.log('[WhatsApp Store] getter messagesProgress:', progress)
+    return Math.min(progress, 100)
   }
 }
 

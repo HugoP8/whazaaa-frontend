@@ -3,7 +3,7 @@
 // URLs de la aplicación
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000'
-export const APP_NAME = import.meta.env.VITE_APP_NAME || 'WhatsApp Mass Sender'
+export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Whazaaa'
 
 // Estados de campaña
 export const CAMPAIGN_STATUS = {

@@ -355,7 +355,7 @@ const actions = {
     }
   },
   
-  // Obtener estadísticas de campañas mejoradas
+  // Obtener estadísticas de campañas mejoradas (ACTUALIZADO SEGÚN BACKEND)
   async fetchCampaignStats({ commit }) {
     try {
       console.log('[Campaigns Store] Obteniendo estadísticas mejoradas de campañas')
@@ -364,14 +364,14 @@ const actions = {
       const stats = response.data.data || response.data
       console.log('[Campaigns Store] Estadísticas obtenidas:', stats)
 
-      // Las estadísticas ahora incluyen todas las métricas y chartData para gráficos
+      // ✅ ACTUALIZADO: Usar nombres de campos del backend
       return {
-        totalCampaigns: stats.totalCampaigns || 0,
-        completedCampaigns: stats.completedCampaigns || 0,
-        activeCampaigns: stats.activeCampaigns || 0,
-        pausedCampaigns: stats.pausedCampaigns || 0,
-        failedCampaigns: stats.failedCampaigns || 0,
-        messageStats: stats.messageStats || {
+        totalCampaigns: stats.totalCampaigns || 0,        // ✅ Correcto
+        completedCampaigns: stats.completedCampaigns || 0,  // ✅ Correcto
+        activeCampaigns: stats.activeCampaigns || 0,      // ✅ Correcto (era inProgress)
+        pausedCampaigns: stats.pausedCampaigns || 0,      // ✅ Correcto
+        failedCampaigns: stats.failedCampaigns || 0,      // ✅ Correcto
+        messageStats: stats.messageStats || {             // ✅ NUEVO campo
           totalSent: 0,
           successful: 0,
           failed: 0
@@ -380,11 +380,13 @@ const actions = {
         totalContacts: stats.totalContacts || 0,
         totalGroups: stats.totalGroups || 0,
         lastCampaignDate: stats.lastCampaignDate || null,
-        chartData: stats.chartData || null,
+        chartData: stats.chartData || null,               // ✅ Formato Chart.js compatible
         ...stats
       }
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo estadísticas:', error)
+      toast.error('Error al cargar estadísticas de campañas')
+
       // Retornar estructura por defecto en caso de error
       return {
         totalCampaigns: 0,

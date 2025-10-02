@@ -4,6 +4,8 @@
     app
     color="grey-lighten-4"
     width="280"
+    @click:outside="handleClickOutside"
+    :temporary="$vuetify.display.mobile"
   >
     <v-list nav>
       <v-list-item
@@ -30,10 +32,10 @@
             <v-icon size="40">mdi-rocket-launch</v-icon>
             <div class="text-h6 mt-2">Mensajes hoy</div>
             <div class="text-h4 font-weight-bold">
-              {{ todayMessages }} / 300
+              {{ todayMessages }} / {{ monthlyLimit }}
             </div>
             <v-progress-linear
-              :model-value="(todayMessages / 300) * 100"
+              :model-value="messagesProgress"
               color="primary"
               height="8"
               rounded
@@ -47,7 +49,10 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useStore } from 'vuex'
+
+const store = useStore()
 
 const props = defineProps({
   modelValue: {
@@ -96,6 +101,21 @@ const menuItems = [
   }
 ]
 
-// TODO: Obtener desde el store
-const todayMessages = computed(() => 45)
+// Obtener datos reales desde el store
+const todayMessages = computed(() => store.getters['whatsapp/todayMessagesCount'])
+const monthlyLimit = computed(() => store.getters['whatsapp/monthlyLimit'])
+const messagesProgress = computed(() => store.getters['whatsapp/messagesProgress'])
+
+// Función para cerrar el menú al hacer clic fuera
+const handleClickOutside = () => {
+  // En dispositivos móviles, cerrar el drawer automáticamente
+  if (window.innerWidth < 1280) { // lg breakpoint de Vuetify
+    localDrawer.value = false
+  }
+}
+
+// Cargar estadísticas al montar el componente
+onMounted(() => {
+  store.dispatch('whatsapp/fetchTodayMessagesStats')
+})
 </script>

@@ -561,6 +561,19 @@ class WhatsAppService {
     }
   }
 
+  async getTodayStats() {
+    try {
+      console.log('[WhatsApp Service] Obteniendo estadísticas de mensajes del día')
+      const response = await api.get('/whatsapp/stats/today')
+      console.log('[WhatsApp Service] Estadísticas del día obtenidas:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('[WhatsApp Service] Error obteniendo estadísticas del día:', error)
+      // No lanzar error para no romper la UI
+      return { todayCount: 0, monthlyLimit: 300 }
+    }
+  }
+
   // Obtener datos para reutilizar campaña
   async getCampaignReuseData(campaignId) {
     try {
