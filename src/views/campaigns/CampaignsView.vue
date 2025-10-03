@@ -63,9 +63,8 @@
           <v-data-table
             :headers="headers"
             :items="filteredCampaigns"
-            :search="search"
             :loading="loading"
-            :items-per-page="10"
+            :items-per-page="1000"
             class="elevation-0"
           >
             <!-- Estado -->
@@ -252,7 +251,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
@@ -277,13 +276,30 @@ const toast = useToast()
 
 const search = ref('')
 const statusFilter = ref(null)
-const sortBy = ref('createdAt')
+const sortBy = ref('createdAt') // Por defecto más reciente
 const deleteDialog = ref(false)
 const selectedCampaign = ref(null)
 const deleting = ref(false)
 const showReuseModal = ref(false)
 const selectedCampaignId = ref(null)
 const cancellingCampaigns = ref([]) // Array de IDs de campañas siendo canceladas
+
+// Watch para recargar campañas cuando cambien los filtros
+watch([statusFilter, sortBy], () => {
+  console.log('[CampaignsView] 🔄 Filtros cambiados, recargando campañas...')
+  loadCampaignsWithFilters()
+}, { deep: true })
+
+// Watch para búsqueda con debounce
+let searchTimeout = null
+watch(search, (newValue) => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+
+  searchTimeout = setTimeout(() => {
+    console.log('[CampaignsView] 🔍 Búsqueda cambiada:', newValue)
+    loadCampaignsWithFilters()
+  }, 500) // Esperar 500ms después de que el usuario deje de escribir
+})
 
 const loading = computed(() => store.getters['campaigns/loading'])
 const campaigns = computed(() => store.getters['campaigns/campaigns'])
@@ -308,31 +324,54 @@ const sortOptions = [
   { value: '-name', title: 'Nombre (Z-A)' }
 ]
 
+// Función para cargar campañas con filtros
+const loadCampaignsWithFilters = async () => {
+  const params = {}
+
+  // Agregar filtro de estado si está seleccionado
+  if (statusFilter.value) {
+    params.status = statusFilter.value
+  }
+
+  // Agregar ordenamiento
+  if (sortBy.value) {
+    const hasMinusPrefix = sortBy.value.startsWith('-')
+    const sortField = sortBy.value.replace('-', '')
+    params.sortBy = sortField
+    // Si tiene '-' → asc (más antigua), si NO tiene '-' → desc (más reciente)
+    params.sortOrder = hasMinusPrefix ? 'asc' : 'desc'
+  }
+
+  // Agregar búsqueda si existe
+  if (search.value && search.value.trim() !== '') {
+    params.search = search.value.trim()
+  }
+
+  console.log('[CampaignsView] 📤 Enviando parámetros al backend:', params)
+  console.log('[CampaignsView] 🔍 Desglose de parámetros:')
+  console.log('  - status:', params.status || 'TODOS')
+  console.log('  - sortBy:', params.sortBy || 'createdAt')
+  console.log('  - sortOrder:', params.sortOrder || 'desc')
+  console.log('  - search:', params.search || 'N/A')
+
+  try {
+    await store.dispatch('campaigns/fetchCampaigns', params)
+    console.log('[CampaignsView] ✅ Campañas cargadas correctamente')
+  } catch (error) {
+    console.error('[CampaignsView] ❌ Error al cargar campañas:', error)
+  }
+}
+
+// Computed simplificado - ya no filtra localmente, confía en el backend
 const filteredCampaigns = computed(() => {
-  let filtered = campaigns.value || []
-  
+  const filtered = campaigns.value || []
+
   // Verificar que filtered sea un array
   if (!Array.isArray(filtered)) {
     console.warn('[CampaignsView] campaigns.value no es un array:', filtered)
     return []
   }
-  
-  // Filtro por estado
-  if (statusFilter.value) {
-    filtered = filtered.filter(c => c.status === statusFilter.value)
-  }
-  
-  // Ordenamiento
-  const sortKey = sortBy.value.replace('-', '')
-  const sortDesc = sortBy.value.startsWith('-')
-  
-  filtered = [...filtered].sort((a, b) => {
-    if (sortDesc) {
-      return b[sortKey] > a[sortKey] ? 1 : -1
-    }
-    return a[sortKey] > b[sortKey] ? 1 : -1
-  })
-  
+
   return filtered
 })
 
@@ -443,7 +482,8 @@ const deleteCampaign = async () => {
 }
 
 onMounted(async () => {
-  const campaignsData = await store.dispatch('campaigns/fetchCampaigns')
+  // Cargar campañas con filtros iniciales
+  await loadCampaignsWithFilters()
 
   // DEBUG: Ver qué datos llegan
   console.log('🔍 [DEBUG] Campañas cargadas:', campaigns.value)
@@ -460,8 +500,21 @@ onMounted(async () => {
 
   // Setup socket listeners for campaign updates
   const whatsappSocket = store.getters['whatsapp/socket']
+  console.log('[CampaignsView] 🔌 Socket disponible:', !!whatsappSocket)
+  console.log('[CampaignsView] 🔌 Socket conectado:', whatsappSocket?.connected)
+
   if (whatsappSocket) {
     setupSocketListeners(whatsappSocket)
+  } else {
+    console.warn('[CampaignsView] ⚠️ Socket no disponible. Esperando conexión...')
+    // Intentar configurar listeners después de 2 segundos
+    setTimeout(() => {
+      const socket = store.getters['whatsapp/socket']
+      if (socket) {
+        console.log('[CampaignsView] ✅ Socket disponible después de espera')
+        setupSocketListeners(socket)
+      }
+    }, 2000)
   }
 })
 
@@ -469,6 +522,7 @@ onUnmounted(() => {
   // Clean up socket listeners
   const whatsappSocket = store.getters['whatsapp/socket']
   if (whatsappSocket) {
+    whatsappSocket.off('campaign-started')
     whatsappSocket.off('campaign-completed')
     whatsappSocket.off('campaign-progress')
     whatsappSocket.off('campaign-cancelled')
@@ -476,6 +530,15 @@ onUnmounted(() => {
 })
 
 const setupSocketListeners = (socket) => {
+  console.log('[CampaignsView] 🔌 Configurando listeners de Socket.IO')
+
+  // Handle campaign started (nueva campaña o reenvío)
+  socket.on('campaign-started', (data) => {
+    console.log('[CampaignsView] 🚀 Nueva campaña iniciada:', data)
+    // Refrescar lista para incluir la nueva campaña
+    refreshCampaignsList()
+  })
+
   // Handle campaign progress updates
   socket.on('campaign-progress', handleCampaignProgress)
 
@@ -487,17 +550,29 @@ const setupSocketListeners = (socket) => {
 }
 
 const handleCampaignProgress = (data) => {
-  console.log(`[CampaignsView] Progreso: ${data.sent}/${data.total}`)
+  console.log(`[CampaignsView] 📊 Progreso recibido:`, data)
+  console.log(`[CampaignsView] 🔍 Buscando campaña ID: ${data.campaignId}`)
 
   // Actualizar campaña en la lista
   const campaign = campaigns.value.find(c => c.id == data.campaignId)
+
   if (campaign) {
-    campaign.sent_count = data.sent
+    console.log(`[CampaignsView] ✅ Campaña encontrada, actualizando...`)
+
+    // Actualizar campos con datos del socket
+    campaign.sent_count = data.sent || data.sentCount || 0
+    campaign.total_recipients = data.total || data.totalCount || campaign.total_recipients
     campaign.progress = data.percentage
     campaign.status = 'IN_PROGRESS'
 
+    console.log(`[CampaignsView] 📈 Progreso actualizado: ${campaign.sent_count}/${campaign.total_recipients} (${data.percentage}%)`)
+
     // Force reactivity update
     store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
+  } else {
+    console.warn(`[CampaignsView] ⚠️ Campaña ${data.campaignId} no encontrada en la lista. Refrescando...`)
+    // Si la campaña no está en la lista, refrescar
+    refreshCampaignsList()
   }
 }
 

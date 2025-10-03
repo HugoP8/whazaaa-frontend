@@ -55,19 +55,19 @@
             <v-icon size="48" color="primary" class="mb-2">
               mdi-account-multiple
             </v-icon>
-            <h3 class="text-h4">{{ campaign.campaign.totalRecipients || 0 }}</h3>
+            <h3 class="text-h4">{{ totalRecipients }}</h3>
             <p class="text-body-2 text-grey">Total Destinatarios</p>
           </v-card-text>
         </v-card>
       </v-col>
-      
+
       <v-col cols="12" sm="6" md="3">
         <v-card elevation="2" rounded="xl">
           <v-card-text class="text-center pa-6">
             <v-icon size="48" color="success" class="mb-2">
               mdi-check-circle
             </v-icon>
-            <h3 class="text-h4">{{ campaign.campaign.sentCount || 0 }}</h3>
+            <h3 class="text-h4">{{ sentCount }}</h3>
             <p class="text-body-2 text-grey">Enviados</p>
           </v-card-text>
         </v-card>
@@ -175,7 +175,7 @@
               Exportar
             </v-btn>
           </v-card-title>
-          
+
           <v-card-text>
             <v-text-field
               v-model="messageSearch"
@@ -185,7 +185,7 @@
               hide-details
               class="mb-4"
             ></v-text-field>
-            
+
             <v-data-table
               :headers="messageHeaders"
               :items="campaign.messages"
@@ -200,7 +200,7 @@
                   {{ item.status }}
                 </v-chip>
               </template>
-              
+
               <template v-slot:item.createdAt="{ item }">
                 {{ formatDate(item.createdAt) }}
               </template>
@@ -209,6 +209,17 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Modal de confirmación de reenvío -->
+    <ResendConfirmModal
+      v-model:show="showResendModal"
+      :campaign-name="campaign?.campaign?.name || ''"
+      :total-recipients="totalRecipients"
+      :sent-count="sentCount"
+      :loading="isResending"
+      @confirm="handleResendConfirm"
+      @cancel="showResendModal = false"
+    />
   </div>
   
   <div v-else>
@@ -229,6 +240,7 @@ import { CAMPAIGN_STATUS_COLORS, CAMPAIGN_STATUS_LABELS } from '@/utils/constant
 import { useToast } from 'vue-toastification'
 import dayjs from 'dayjs'
 import durationPlugin from 'dayjs/plugin/duration'
+import ResendConfirmModal from '@/components/campaigns/ResendConfirmModal.vue'
 
 dayjs.extend(durationPlugin)
 
@@ -239,7 +251,32 @@ const toast = useToast()
 
 const messageSearch = ref('')
 const isResending = ref(false)
+const showResendModal = ref(false)
 const campaign = computed(() => store.getters['campaigns/currentCampaign'])
+
+// Computed para obtener el total de destinatarios de forma robusta
+const totalRecipients = computed(() => {
+  if (!campaign.value) return 0
+
+  // Intentar diferentes fuentes de datos
+  return campaign.value.campaign?.totalRecipients
+    || campaign.value.campaign?.total_recipients
+    || campaign.value.messages?.length
+    || 0
+})
+
+// Computed para obtener el total de mensajes enviados de forma robusta
+const sentCount = computed(() => {
+  if (!campaign.value) return 0
+
+  // Contar mensajes con estado SENT
+  const sentFromMessages = campaign.value.messages?.filter(m => m.status === 'SENT').length || 0
+
+  return campaign.value.campaign?.sentCount
+    || campaign.value.campaign?.sent_count
+    || sentFromMessages
+    || 0
+})
 
 const messageHeaders = [
   { title: 'Destinatario', key: 'recipient' },
@@ -251,12 +288,12 @@ const messageHeaders = [
 
 const failedCount = computed(() => {
   if (!campaign.value) return 0
-  return campaign.value.messages.filter(m => m.status === 'FAILED').length
+  return campaign.value.messages?.filter(m => m.status === 'FAILED').length || 0
 })
 
 const successRate = computed(() => {
-  if (!campaign.value?.campaign.totalRecipients) return 0
-  return Math.round((campaign.value.campaign.sentCount / campaign.value.campaign.totalRecipients) * 100)
+  if (!totalRecipients.value || totalRecipients.value === 0) return 0
+  return Math.round((sentCount.value / totalRecipients.value) * 100)
 })
 
 const duration = computed(() => {
@@ -306,44 +343,40 @@ const resendCampaign = async () => {
       return
     }
 
-    // Mostrar dialog de confirmación con Vuetify
-    const dialogElement = document.createElement('div')
-    document.body.appendChild(dialogElement)
+    // Mostrar modal de confirmación moderno
+    showResendModal.value = true
 
-    const confirmed = window.confirm(`¿Estás seguro de que quieres reenviar esta campaña?
+  } catch (error) {
+    console.error('[CampaignDetailView] Error al verificar estado:', error)
+    toast.error('Error al verificar conexión de WhatsApp')
+  }
+}
 
-Campaña: ${campaign.value.campaign.name}
-Destinatarios: ${campaign.value.campaign.totalRecipients}
-Tipo: ${campaign.value.campaign.type}
-
-Esta acción creará una nueva campaña y comenzará el envío inmediatamente.`)
-
-    if (!confirmed) {
-      document.body.removeChild(dialogElement)
-      return
-    }
-
+const handleResendConfirm = async () => {
+  try {
     // Mostrar loading
     isResending.value = true
 
     console.log('[CampaignDetailView] Reenviando campaña:', campaign.value.campaign.id)
     const result = await store.dispatch('campaigns/resendCampaign', campaign.value.campaign.id)
 
+    // Cerrar modal
+    showResendModal.value = false
+
     // Manejar respuesta asíncrona
     if (result.data?.async) {
       toast.success('Reenvío iniciado correctamente')
-      toast.info('Recibirás notificaciones del progreso en tiempo real')
+      toast.info('Redirigiendo a campañas para ver el progreso en tiempo real...')
 
-      // Navegar a la nueva campaña creada si existe ID
-      if (result.data?.newCampaignId) {
-        await new Promise(resolve => setTimeout(resolve, 2000)) // Esperar 2 segundos
-        router.push(`/campaigns/${result.data.newCampaignId}`)
-      }
+      // Redirigir a /campaigns para ver el progreso en tiempo real
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      router.push('/campaigns')
     } else {
       toast.success('Campaña reenviada exitosamente')
+      // Igual redirigir a campañas
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      router.push('/campaigns')
     }
-
-    document.body.removeChild(dialogElement)
 
   } catch (error) {
     console.error('[CampaignDetailView] Error al reenviar campaña:', error)
@@ -353,6 +386,9 @@ Esta acción creará una nueva campaña y comenzará el envío inmediatamente.`)
       toast.info('El reenvío puede estar procesándose en segundo plano', {
         timeout: 10000
       })
+      // Redirigir igualmente
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      router.push('/campaigns')
     }
   } finally {
     isResending.value = false

@@ -15,7 +15,7 @@ const state = {
   reuseData: null,
   pagination: {
     page: 1,
-    perPage: 20,
+    perPage: 1000, // Mostrar todas las campañas
     total: 0,
     totalPages: 0
   },
@@ -43,10 +43,14 @@ const mutations = {
   },
   
   UPDATE_CAMPAIGN(state, updatedCampaign) {
-    console.log('[Campaigns Store] UPDATE_CAMPAIGN:', updatedCampaign.id)
+    console.log('[Campaigns Store] UPDATE_CAMPAIGN:', updatedCampaign.id, updatedCampaign)
     const index = state.campaigns.findIndex(c => c.id === updatedCampaign.id)
     if (index !== -1) {
-      state.campaigns.splice(index, 1, updatedCampaign)
+      // Usar Object.assign para mantener reactividad y actualizar propiedades
+      Object.assign(state.campaigns[index], updatedCampaign)
+      console.log('[Campaigns Store] ✅ Campaña actualizada en index:', index)
+    } else {
+      console.warn('[Campaigns Store] ⚠️ Campaña no encontrada para actualizar:', updatedCampaign.id)
     }
 
     // Actualizar campaña actual si es la misma

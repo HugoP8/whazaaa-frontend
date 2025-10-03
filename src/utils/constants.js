@@ -5,37 +5,34 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/ap
 export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000'
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Whazaaa'
 
-// Estados de campaña
+// Estados de campaña (EN MAYÚSCULAS según backend)
 export const CAMPAIGN_STATUS = {
-  DRAFT: 'draft',
-  SCHEDULED: 'scheduled',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  PAUSED: 'paused',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled'
+  PENDING: 'PENDING',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  PAUSED: 'PAUSED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED'
 }
 
 // Colores para estados de campaña
 export const CAMPAIGN_STATUS_COLORS = {
-  [CAMPAIGN_STATUS.DRAFT]: 'grey',
-  [CAMPAIGN_STATUS.SCHEDULED]: 'blue',
-  [CAMPAIGN_STATUS.RUNNING]: 'orange',
-  [CAMPAIGN_STATUS.COMPLETED]: 'green',
-  [CAMPAIGN_STATUS.PAUSED]: 'yellow',
-  [CAMPAIGN_STATUS.FAILED]: 'red',
-  [CAMPAIGN_STATUS.CANCELLED]: 'grey-darken-2'
+  PENDING: 'blue',
+  IN_PROGRESS: 'orange',
+  COMPLETED: 'green',
+  PAUSED: 'yellow',
+  FAILED: 'red',
+  CANCELLED: 'grey-darken-2'
 }
 
 // Etiquetas para estados de campaña
 export const CAMPAIGN_STATUS_LABELS = {
-  [CAMPAIGN_STATUS.DRAFT]: 'Borrador',
-  [CAMPAIGN_STATUS.SCHEDULED]: 'Programada',
-  [CAMPAIGN_STATUS.RUNNING]: 'En Progreso',
-  [CAMPAIGN_STATUS.COMPLETED]: 'Completada',
-  [CAMPAIGN_STATUS.PAUSED]: 'Pausada',
-  [CAMPAIGN_STATUS.FAILED]: 'Fallida',
-  [CAMPAIGN_STATUS.CANCELLED]: 'Cancelada'
+  PENDING: 'Pendiente',
+  IN_PROGRESS: 'En Progreso',
+  COMPLETED: 'Completada',
+  PAUSED: 'Pausada',
+  FAILED: 'Fallida',
+  CANCELLED: 'Cancelada'
 }
 
 // Estados de WhatsApp

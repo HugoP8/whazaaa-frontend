@@ -44,8 +44,13 @@
           <div class="info-item">
             <v-icon color="primary" size="20">mdi-account-multiple</v-icon>
             <div class="info-text">
-              <span class="info-label">Destinatarios</span>
-              <span class="info-value">{{ totalRecipients }}</span>
+              <span class="info-label">
+                {{ totalRecipients === 1 ? 'Destinatario' : 'Destinatarios' }}
+              </span>
+              <span class="info-value">
+                {{ totalRecipients || 'No disponible' }}
+                <span v-if="totalRecipients === 1" class="info-hint">(grupo/contacto)</span>
+              </span>
             </div>
           </div>
 
@@ -53,7 +58,12 @@
             <v-icon color="success" size="20">mdi-check-circle</v-icon>
             <div class="info-text">
               <span class="info-label">Enviados anteriormente</span>
-              <span class="info-value">{{ sentCount }}</span>
+              <span class="info-value">
+                {{ sentCount || 'No disponible' }}
+                <span v-if="sentCount && totalRecipients" class="info-hint">
+                  ({{ Math.round((sentCount / totalRecipients) * 100) }}%)
+                </span>
+              </span>
             </div>
           </div>
         </div>
@@ -65,7 +75,13 @@
           density="compact"
         >
           <v-icon start>mdi-alert</v-icon>
-          Esta acción duplicará los mensajes a los destinatarios que ya recibieron el mensaje
+          <div>
+            <strong>Importante:</strong> Esta acción reenviará el mensaje a
+            {{ totalRecipients === 1 ? 'este destinatario' : `estos ${totalRecipients} destinatarios` }}.
+            <span v-if="sentCount > 0">
+              Los mensajes se duplicarán para quienes ya lo recibieron.
+            </span>
+          </div>
         </v-alert>
       </v-card-text>
 
@@ -261,6 +277,13 @@ watch(() => props.show, (newVal) => {
   font-size: 1.125rem;
   font-weight: 700;
   color: #1a1a1a;
+}
+
+.info-hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #666;
+  margin-left: 4px;
 }
 
 .modal-actions {
