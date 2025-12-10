@@ -34,6 +34,18 @@
 
       <v-spacer></v-spacer>
 
+      <!-- Admin Button (Solo para admins) -->
+      <v-btn
+        v-if="isAdmin"
+        color="purple-darken-2"
+        variant="elevated"
+        prepend-icon="mdi-shield-crown"
+        class="mr-4"
+        @click="$router.push('/admin')"
+      >
+        Panel Admin
+      </v-btn>
+
       <!-- Connection Status -->
       <div class="connection-section">
         <connection-status />
@@ -138,6 +150,13 @@ const userMenuOpen = ref(false)
 
 const currentUser = computed(() => store.getters['auth/user'])
 const userDisplayInfo = computed(() => store.getters['auth/userDisplayInfo'])
+const isAdmin = computed(() => {
+  const admin = store.getters['auth/isAdmin']
+  console.log('[DefaultLayout] isAdmin:', admin)
+  console.log('[DefaultLayout] currentUser:', currentUser.value)
+  console.log('[DefaultLayout] user role:', currentUser.value?.role)
+  return admin
+})
 
 const goToDashboard = () => {
   router.push('/dashboard')

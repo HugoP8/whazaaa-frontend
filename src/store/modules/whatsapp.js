@@ -330,22 +330,25 @@ const actions = {
       // Iniciar conexión WhatsApp
       const connectResponse = await whatsappService.connect()
       console.log('[WhatsApp Store] Conexión iniciada')
-      
+
       // Si ya estaba conectado, procesar el estado recibido
       if (connectResponse.status && connectResponse.message?.includes('Ya está conectado')) {
         console.log('[WhatsApp Store] Usuario ya conectado, procesando estado:', connectResponse.status)
         const status = connectResponse.status
-        
-        commit('SET_CONNECTED', status.connected || (status.state === 'connected'))
+
+        // 🛡️ FIX DEFENSIVO: Validar estado real
+        const isReallyConnected = status.state === 'connected' && status.user !== null
+
+        commit('SET_CONNECTED', isReallyConnected)
         commit('SET_CONNECTION_INFO', status.user || status.connectionInfo)
-        
-        if (status.connected || status.state === 'connected') {
+
+        if (isReallyConnected) {
           commit('SET_CONNECTION_ERROR', null)
           commit('SET_QR_CODE', null)
           return
         }
       }
-      
+
     } catch (error) {
       console.error('[WhatsApp Store] Error conectando:', error)
       commit('SET_CONNECTION_ERROR', error.message)
@@ -414,29 +417,44 @@ const actions = {
     try {
       const status = await whatsappService.syncConnectionStatus()
       console.log('[WhatsApp Store] Estado sincronizado:', status)
-      
-      const isConnected = status.connected || (status.state === 'connected')
-      commit('SET_CONNECTED', isConnected)
+
+      // 🛡️ FIX DEFENSIVO: No confiar ciegamente en status.connected del backend
+      // Solo considerar conectado si REALMENTE está conectado:
+      // 1. state === 'connected' (estado real es conectado)
+      // 2. user !== null (hay sesión activa de WhatsApp)
+      const isReallyConnected = status.state === 'connected' && status.user !== null
+
+      console.log('[WhatsApp Store] Validación defensiva:', {
+        backendSaysConnected: status.connected,
+        stateIsConnected: status.state === 'connected',
+        hasUser: status.user !== null,
+        isReallyConnected: isReallyConnected
+      })
+
+      commit('SET_CONNECTED', isReallyConnected)
       commit('SET_CONNECTION_INFO', status.user || status.connectionInfo)
-      
-      if (isConnected) {
+
+      if (isReallyConnected) {
         commit('SET_CONNECTION_ERROR', null)
         commit('SET_QR_CODE', null)
+      } else if (status.state === 'connecting') {
+        // Si está conectando, limpiar error pero no marcar como conectado
+        commit('SET_CONNECTION_ERROR', null)
       }
-      
-      return { ...status, connected: isConnected }
+
+      return { ...status, connected: isReallyConnected }
     } catch (error) {
       console.error('[WhatsApp Store] Error verificando estado:', error)
       commit('SET_CONNECTED', false)
       commit('SET_CONNECTION_INFO', null)
-      
+
       // Si es error de conexión, mostrar mensaje más amigable
       if (error.message?.includes('WhatsApp no está conectado')) {
         commit('SET_CONNECTION_ERROR', 'WhatsApp desconectado')
       } else {
         commit('SET_CONNECTION_ERROR', error.message)
       }
-      
+
       return { connected: false }
     }
   },
@@ -448,24 +466,27 @@ const actions = {
       // Intentar múltiples verificaciones
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[WhatsApp Store] Intento de sincronización ${attempt}/3`)
-        
+
         const status = await whatsappService.getStatus()
         console.log('[WhatsApp Store] Estado obtenido:', status)
-        
-        if (status.connected) {
+
+        // 🛡️ FIX DEFENSIVO: Validar estado real
+        const isReallyConnected = status.state === 'connected' && status.user !== null
+
+        if (isReallyConnected) {
           console.log('[WhatsApp Store] ✅ Estado sincronizado - WhatsApp conectado!')
           commit('SET_CONNECTED', true)
           commit('SET_CONNECTION_INFO', status.user)
           commit('SET_CONNECTION_ERROR', null)
           return status
         }
-        
+
         // Esperar 2 segundos entre intentos
         if (attempt < 3) {
           await new Promise(resolve => setTimeout(resolve, 2000))
         }
       }
-      
+
       console.log('[WhatsApp Store] ❌ No se pudo sincronizar estado después de 3 intentos')
       return { connected: false }
     } catch (error) {
@@ -477,7 +498,7 @@ const actions = {
   // Acción para detectar y corregir desconexiones automáticamente
   async detectAndReconnect({ commit, state, dispatch }) {
     console.log('[WhatsApp Store] 🔍 Detectando estado de conexión...')
-    
+
     if (state.connecting) {
       console.log('[WhatsApp Store] Ya hay una conexión en proceso')
       return false
@@ -486,12 +507,15 @@ const actions = {
     try {
       // Verificar estado actual
       const status = await whatsappService.getStatus()
-      
-      if (!status.connected && state.connected) {
+
+      // 🛡️ FIX DEFENSIVO: Validar estado real
+      const isReallyConnected = status.state === 'connected' && status.user !== null
+
+      if (!isReallyConnected && state.connected) {
         console.log('[WhatsApp Store] ⚠️ Desconexión detectada - intentando reconexión...')
         commit('SET_CONNECTED', false)
         commit('SET_CONNECTION_INFO', null)
-        
+
         // Intentar reconexión automática
         try {
           await dispatch('connect')
@@ -502,15 +526,15 @@ const actions = {
           commit('SET_CONNECTION_ERROR', 'Conexión perdida - reconexión falló')
           return false
         }
-      } else if (status.connected && !state.connected) {
+      } else if (isReallyConnected && !state.connected) {
         console.log('[WhatsApp Store] ✅ Conexión encontrada - sincronizando estado')
         commit('SET_CONNECTED', true)
         commit('SET_CONNECTION_INFO', status.user)
         commit('SET_CONNECTION_ERROR', null)
         return true
       }
-      
-      return status.connected
+
+      return isReallyConnected
     } catch (error) {
       console.error('[WhatsApp Store] Error en detección de conexión:', error)
       return false

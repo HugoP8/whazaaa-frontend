@@ -2,12 +2,14 @@ import { createStore } from 'vuex'
 import auth from './modules/auth'
 import campaigns from './modules/campaigns'
 import whatsapp from './modules/whatsapp'
+import admin from './modules/admin'
 
 export default createStore({
   modules: {
     auth,
     campaigns,
-    whatsapp
+    whatsapp,
+    admin
   },
   
   state: {

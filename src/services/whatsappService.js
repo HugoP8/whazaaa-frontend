@@ -76,7 +76,7 @@ class WhatsAppService {
   // Conectar socket con protección contra loops
   connectSocket(userId, eventHandlers = {}) {
     const finalUserId = userId || this.getUserId()
-    
+
     // Prevenir reconexiones excesivas
     if (this.socket?.connected && this.userId === finalUserId) {
       console.log('[WhatsApp Service] Reutilizando socket existente')
@@ -91,15 +91,58 @@ class WhatsAppService {
     this.userId = finalUserId
     console.log(`[WhatsApp Service] Conectando socket para usuario: ${finalUserId}`)
 
-    this.socket = io(SOCKET_URL, {
+    // Obtener token del localStorage
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('[WhatsApp Service] 🔍 INICIANDO CONEXIÓN SOCKET')
+    console.log('[WhatsApp Service] UserId:', finalUserId)
+
+    let token = localStorage.getItem('token')
+    console.log('[WhatsApp Service] Token RAW del localStorage:', token ? token.substring(0, 30) + '...' : 'NULL')
+
+    // Limpiar el token si está en formato JSON
+    if (token) {
+      try {
+        const parsed = JSON.parse(token)
+        token = typeof parsed === 'string' ? parsed : token
+        console.log('[WhatsApp Service] Token después de parsear:', token ? token.substring(0, 30) + '...' : 'NULL')
+      } catch (e) {
+        console.log('[WhatsApp Service] Token NO es JSON, usando tal cual')
+      }
+    }
+
+    console.log('[WhatsApp Service] 🔑 Token presente:', !!token)
+    console.log('[WhatsApp Service] 🔑 Token length:', token ? token.length : 0)
+    console.log('[WhatsApp Service] 🔑 Token tipo:', typeof token)
+
+    // Configuración del socket CON autenticación JWT
+    const socketConfig = {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,
-      reconnectionDelay: 2000,    // Aumentar delay
-      reconnectionAttempts: 3,    // Reducir intentos
+      reconnectionDelay: 2000,
+      reconnectionAttempts: 3,
       timeout: 15000,
       query: { userId: finalUserId }
-    })
+    }
+
+    // Agregar autenticación JWT si hay token
+    if (token) {
+      socketConfig.auth = {
+        token: token
+      }
+      console.log('[WhatsApp Service] ✅ Socket configurado con autenticación JWT')
+      console.log('[WhatsApp Service] socketConfig.auth:', socketConfig.auth)
+    } else {
+      console.error('[WhatsApp Service] ❌❌❌ NO HAY TOKEN - Socket sin autenticación')
+      console.error('[WhatsApp Service] localStorage keys:', Object.keys(localStorage))
+      console.error('[WhatsApp Service] localStorage.user:', localStorage.getItem('user'))
+    }
+
+    console.log('[WhatsApp Service] 📡 Conectando a:', SOCKET_URL)
+    console.log('[WhatsApp Service] 📡 Config completo:', JSON.stringify(socketConfig, null, 2))
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+    this.socket = io(SOCKET_URL, socketConfig)
 
     // Configurar eventos básicos una sola vez
     this.setupBasicSocketEvents(finalUserId)
@@ -148,6 +191,20 @@ class WhatsAppService {
     this.socket.on('connect_error', (error) => {
       console.error('[WhatsApp Service] Error conectando:', error.message)
       this.connected = false
+
+      // Manejar errores de autenticación específicamente
+      if (error.message && error.message.includes('Authentication')) {
+        console.error('[WhatsApp Service] ❌ Error de autenticación JWT')
+        console.error('[WhatsApp Service] Token inválido o expirado')
+
+        // Limpiar token y redirigir al login
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        localStorage.removeItem('membership')
+
+        // Puedes emitir un evento o usar el router aquí si es necesario
+        window.location.href = '/auth/login'
+      }
     })
   }
 

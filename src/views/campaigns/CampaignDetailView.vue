@@ -365,8 +365,8 @@ const handleResendConfirm = async () => {
 
     // Manejar respuesta asíncrona
     if (result.data?.async) {
-      toast.success('Reenvío iniciado correctamente')
-      toast.info('Redirigiendo a campañas para ver el progreso en tiempo real...')
+      //toast.success('Reenvío iniciado correctamente')
+      //toast.info('Redirigiendo a campañas para ver el progreso en tiempo real...')
 
       // Redirigir a /campaigns para ver el progreso en tiempo real
       await new Promise(resolve => setTimeout(resolve, 1500))

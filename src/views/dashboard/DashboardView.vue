@@ -59,6 +59,11 @@
     
     <!-- Gráficos y actividad reciente -->
     <v-row v-if="isConnected" class="mt-4">
+      <!-- Usage Widget -->
+      <v-col cols="12" md="4">
+        <UsageWidget />
+      </v-col>
+
       <!-- Gráfico de mensajes - ACTUALIZADO CON DATOS REALES -->
       <v-col cols="12" md="8">
         <v-card elevation="2" rounded="xl">
@@ -132,7 +137,7 @@
       </v-col>
       
       <!-- Campañas recientes -->
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="12">
         <v-card elevation="2" rounded="xl">
           <v-card-title class="d-flex justify-space-between">
             <span>Campañas Recientes</span>
@@ -282,6 +287,7 @@ import { computed, onMounted, watch, ref, nextTick, onBeforeUnmount } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import QRCode from '@/components/whatsapp/QRCode.vue'
+import UsageWidget from '@/components/subscription/UsageWidget.vue'
 import { CAMPAIGN_STATUS_COLORS } from '@/utils/constants'
 import dayjs from 'dayjs'
 import { Chart, registerables } from 'chart.js'

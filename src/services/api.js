@@ -63,6 +63,31 @@ const setupInterceptors = (apiInstance, instanceName = 'API') => {
   apiInstance.interceptors.response.use(
     response => {
       console.log(`[${instanceName}] Interceptor response:`, response.config.url, 'Estado:', response.status)
+
+      // WORKAROUND: Agregar role si el backend no lo envía
+      if (response.config.url?.includes('/auth/login') && response.data?.user) {
+        console.log('✅ [API] Respuesta de login recibida')
+        console.log('✅ [API] Usuario:', response.data.user)
+        console.log('✅ [API] Role del usuario:', response.data.user.role)
+
+        // Si no hay role, agregarlo basándose en el email
+        if (!response.data.user.role) {
+          console.warn('⚠️ [API] Backend NO envió campo role, agregando automáticamente')
+
+          const email = response.data.user.email || ''
+
+          if (email.includes('superadmin')) {
+            response.data.user.role = 'superadmin'
+          } else if (email.includes('admin')) {
+            response.data.user.role = 'admin'
+          } else {
+            response.data.user.role = 'user'
+          }
+
+          console.log('🔧 [API] Role asignado automáticamente:', response.data.user.role)
+        }
+      }
+
       return response
     },
     error => {
@@ -87,23 +112,63 @@ const setupInterceptors = (apiInstance, instanceName = 'API') => {
       }
 
       if (error.response) {
+        const errorData = error.response.data
+        const errorCode = errorData?.code
+
         switch (error.response.status) {
           case 401:
-            console.warn('Token inválido o expirado - limpiando sesión')
+            console.warn('[API] Error 401 - Código:', errorCode)
 
-            // Limpiar localStorage
-            localStorage.removeItem('token')
-            localStorage.removeItem('user')
+            // Manejar códigos de error específicos
+            if (errorCode === 'TOKEN_EXPIRED') {
+              console.error('[API] Token expirado - redirigiendo a login')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
 
-            // Redirigir a login si no estamos ya ahí
-            if (router.currentRoute.value.path !== '/auth/login') {
-              router.push('/auth/login')
-              toast.error('Sesión expirada. Por favor, inicia sesión nuevamente.')
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
+              }
+            } else if (errorCode === 'INVALID_TOKEN' || errorCode === 'NO_TOKEN') {
+              console.error('[API] Token inválido o no presente - redirigiendo a login')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
+
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Sesión inválida. Por favor, inicia sesión.')
+              }
+            } else {
+              // Error 401 genérico
+              console.warn('[API] Token inválido o expirado - limpiando sesión')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
+
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Sesión expirada. Por favor, inicia sesión nuevamente.')
+              }
             }
             break
 
           case 403:
-            toast.error('No tienes permisos para realizar esta acción')
+            // Verificar si es un error de límite alcanzado
+            if (errorCode && errorCode.includes('LIMIT_REACHED')) {
+              console.warn(`[${instanceName}] Límite alcanzado:`, errorCode, errorData)
+              // No mostrar toast aquí, será manejado por el componente con el modal
+              error.isLimitError = true
+              error.limitData = errorData
+            } else if (errorCode === 'NO_SUBSCRIPTION') {
+              // Usuario sin suscripción activa
+              console.warn('[API] Usuario sin suscripción activa')
+              router.push('/pricing')
+              toast.error('No tienes una suscripción activa. Por favor, elige un plan.')
+            } else {
+              toast.error('No tienes permisos para realizar esta acción')
+            }
             break
 
           case 404:

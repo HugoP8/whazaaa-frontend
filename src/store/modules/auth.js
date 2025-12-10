@@ -35,6 +35,7 @@ const toast = useToast()
 const state = {
   user: secureStorage.getItem('user'),
   token: secureStorage.getItem('token'),
+  membership: secureStorage.getItem('membership'),
   loading: false,
   error: null,
   lastActivity: null,
@@ -44,14 +45,17 @@ const state = {
 const mutations = {
   SET_USER(state, user) {
     console.log('[Auth Store] SET_USER:', user)
+    console.log('[Auth Store] SET_USER - role:', user?.role)
     state.user = user
     if (user) {
       secureStorage.setItem('user', user)
+      console.log('[Auth Store] Usuario guardado en localStorage')
+      console.log('[Auth Store] Verificando localStorage:', JSON.parse(localStorage.getItem('user')))
     } else {
       secureStorage.removeItem('user')
     }
   },
-  
+
   SET_TOKEN(state, token) {
     console.log('[Auth Store] SET_TOKEN:', token ? 'Presente' : 'No presente')
     state.token = token
@@ -61,26 +65,38 @@ const mutations = {
       secureStorage.removeItem('token')
     }
   },
-  
+
+  SET_MEMBERSHIP(state, membership) {
+    console.log('[Auth Store] SET_MEMBERSHIP:', membership)
+    state.membership = membership
+    if (membership) {
+      secureStorage.setItem('membership', membership)
+    } else {
+      secureStorage.removeItem('membership')
+    }
+  },
+
   SET_LOADING(state, loading) {
     console.log('[Auth Store] SET_LOADING:', loading)
     state.loading = loading
   },
-  
+
   SET_ERROR(state, error) {
     console.log('[Auth Store] SET_ERROR:', error)
     state.error = error
   },
-  
+
   CLEAR_AUTH(state) {
     console.log('[Auth Store] CLEAR_AUTH')
     state.user = null
     state.token = null
+    state.membership = null
     state.error = null
     secureStorage.removeItem('user')
     secureStorage.removeItem('token')
+    secureStorage.removeItem('membership')
   },
-  
+
   SET_INITIALIZED(state, initialized) {
     console.log('[Auth Store] SET_INITIALIZED:', initialized)
     state.initialized = initialized
@@ -164,15 +180,26 @@ const actions = {
     try {
       console.log('[Auth Store] Intentando login para:', credentials.email)
       const response = await api.post('/auth/login', credentials)
-      
+
+      console.log('[Auth Store] Respuesta completa del backend:', response.data)
+
       const { user, token } = response.data
-      
+
       if (!user || !token) {
         throw new Error('Respuesta de login inválida')
       }
-      
+
       console.log('[Auth Store] Login exitoso para usuario:', user.email)
-      
+      console.log('[Auth Store] Usuario completo:', user)
+      console.log('[Auth Store] Campo role:', user.role)
+      console.log('[Auth Store] Tipo de role:', typeof user.role)
+
+      // Guardar membership si viene en la respuesta
+      if (user.membership) {
+        console.log('[Auth Store] Membership recibida:', user.membership)
+        commit('SET_MEMBERSHIP', user.membership)
+      }
+
       commit('SET_USER', user)
       commit('SET_TOKEN', token)
       
@@ -228,9 +255,15 @@ const actions = {
       const response = await api.post('/auth/register', userData)
       
       const { user, token } = response.data
-      
+
       console.log('[Auth Store] Registro exitoso para usuario:', user.email)
-      
+
+      // Guardar membership si viene en la respuesta
+      if (user.membership) {
+        console.log('[Auth Store] Membership recibida en registro:', user.membership)
+        commit('SET_MEMBERSHIP', user.membership)
+      }
+
       commit('SET_USER', user)
       commit('SET_TOKEN', token)
       
@@ -280,18 +313,49 @@ const actions = {
     }
   },
   
+  // Obtener perfil completo con membership
+  async fetchProfile({ commit }) {
+    try {
+      console.log('[Auth Store] Obteniendo perfil completo')
+      const response = await api.get('/auth/profile')
+
+      if (response.data && response.data.success) {
+        const userData = response.data.data
+        commit('SET_USER', userData)
+
+        // Actualizar membership si viene en la respuesta
+        if (userData.membership) {
+          console.log('[Auth Store] Actualizando membership desde perfil:', userData.membership)
+          commit('SET_MEMBERSHIP', userData.membership)
+        }
+
+        return userData
+      }
+    } catch (error) {
+      console.error('[Auth Store] Error obteniendo perfil:', error)
+      throw error
+    }
+  },
+
   // Actualizar perfil
   async updateProfile({ commit, state }, profileData) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
       console.log('[Auth Store] Actualizando perfil de usuario:', state.user.id)
       const response = await api.put('/auth/profile', profileData)
-      
+
       const updatedUser = response.data.user
+
+      // Actualizar membership si viene en la respuesta
+      if (updatedUser.membership) {
+        console.log('[Auth Store] Actualizando membership desde update:', updatedUser.membership)
+        commit('SET_MEMBERSHIP', updatedUser.membership)
+      }
+
       commit('SET_USER', updatedUser)
-      
+
       toast.success('Perfil actualizado exitosamente')
       return updatedUser
     } catch (error) {
@@ -419,7 +483,19 @@ const getters = {
   
   // Verificar si el usuario es admin
   isAdmin: state => {
-    return state.user?.role === 'admin'
+    const role = state.user?.role
+    const isAdminRole = role === 'admin' || role === 'superadmin'
+    console.log('[Auth Store Getter isAdmin]', {
+      user: state.user?.email,
+      role: role,
+      isAdmin: isAdminRole
+    })
+    return isAdminRole
+  },
+
+  // Verificar si el usuario es superadmin
+  isSuperAdmin: state => {
+    return state.user?.role === 'superadmin'
   },
   
   // Verificar si la sesión está activa
@@ -433,6 +509,26 @@ const getters = {
   isInitialized: state => {
     console.log('[Auth Store] getter isInitialized:', state.initialized)
     return state.initialized
+  },
+
+  // Obtener información de membership
+  membership: state => {
+    return state.membership
+  },
+
+  // Verificar si la membership está por vencer
+  membershipExpiringSoon: state => {
+    return state.membership?.expiringSoon || false
+  },
+
+  // Obtener nombre del plan actual
+  currentPlan: state => {
+    return state.membership?.plan?.displayName || 'Plan Gratuito'
+  },
+
+  // Obtener status de la membership
+  membershipStatus: state => {
+    return state.membership?.statusDisplay || 'N/A'
   }
 }
 
