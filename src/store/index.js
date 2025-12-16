@@ -3,13 +3,15 @@ import auth from './modules/auth'
 import campaigns from './modules/campaigns'
 import whatsapp from './modules/whatsapp'
 import admin from './modules/admin'
+import credits from './modules/credits'
 
 export default createStore({
   modules: {
     auth,
     campaigns,
     whatsapp,
-    admin
+    admin,
+    credits
   },
   
   state: {

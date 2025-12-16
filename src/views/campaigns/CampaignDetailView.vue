@@ -354,11 +354,25 @@ const resendCampaign = async () => {
 
 const handleResendConfirm = async () => {
   try {
+    // ⚡ VERIFICAR CRÉDITOS SUFICIENTES ANTES DE REENVIAR
+    // 1 CAMPAÑA = 1 CRÉDITO (sin importar destinatarios)
+    const totalCredits = store.getters['credits/totalCredits']
+    const requiredCredits = 1
+
+    if (totalCredits < requiredCredits) {
+      toast.error(`Créditos insuficientes. Necesitas ${requiredCredits} crédito, tienes ${totalCredits}`)
+      showResendModal.value = false
+      return
+    }
+
     // Mostrar loading
     isResending.value = true
 
     console.log('[CampaignDetailView] Reenviando campaña:', campaign.value.campaign.id)
     const result = await store.dispatch('campaigns/resendCampaign', campaign.value.campaign.id)
+
+    // ⚡ ACTUALIZAR BALANCE DESPUÉS DE REENVIAR
+    await store.dispatch('credits/fetchBalance')
 
     // Cerrar modal
     showResendModal.value = false

@@ -199,6 +199,51 @@ const actions = {
     }
   },
 
+  // Extender suscripción de usuario
+  async extendSubscription({ commit }, { userId, months, reason }) {
+    try {
+      commit('SET_LOADING', true)
+      commit('CLEAR_ERROR')
+
+      const response = await api.post(`/admin/users/${userId}/subscription/extend`, {
+        months,
+        reason
+      })
+
+      return response.data
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Error al extender suscripción'
+      commit('SET_ERROR', errorMessage)
+      throw error
+    } finally {
+      commit('SET_LOADING', false)
+    }
+  },
+
+  // Recargar créditos a usuario
+  async rechargeUserCredits({ commit }, { userId, credits, type, amount, payment_method, notes }) {
+    try {
+      commit('SET_LOADING', true)
+      commit('CLEAR_ERROR')
+
+      const response = await api.post(`/admin/credits/recharge/${userId}`, {
+        credits,
+        type, // 'plan' o 'bonus'
+        amount,
+        payment_method,
+        notes
+      })
+
+      return response.data
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Error al recargar créditos'
+      commit('SET_ERROR', errorMessage)
+      throw error
+    } finally {
+      commit('SET_LOADING', false)
+    }
+  },
+
   // Obtener reporte financiero
   async fetchFinancialReport({ commit }, { startDate, endDate } = {}) {
     try {

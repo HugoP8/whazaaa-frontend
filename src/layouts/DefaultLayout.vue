@@ -132,6 +132,9 @@
 
     <!-- Modern Footer -->
     <app-footer />
+
+    <!-- Alerta de créditos bajos -->
+    <LowCreditsAlert @recharge="handleRecharge" />
   </v-app>
 </template>
 
@@ -142,6 +145,7 @@ import { useRouter } from 'vue-router'
 import NavigationDrawer from '@/components/layout/NavigationDrawer.vue'
 import AppFooter from '@/components/layout/Footer.vue'
 import ConnectionStatus from '@/components/whatsapp/ConnectionStatus.vue'
+import LowCreditsAlert from '@/components/credits/LowCreditsAlert.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -165,6 +169,10 @@ const goToDashboard = () => {
 const logout = () => {
   userMenuOpen.value = false
   store.dispatch('auth/logout')
+}
+
+const handleRecharge = () => {
+  router.push('/credits/history')
 }
 </script>
 

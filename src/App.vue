@@ -110,6 +110,12 @@ onMounted(async () => {
       loadingMessage.value = 'Verificando sesión...'
       // La verificación del token ya se hace en auth store initialization
       console.log('[App] Usuario autenticado correctamente')
+
+      // ⚡ CARGAR BALANCE DE CRÉDITOS AL INICIAR
+      loadingMessage.value = 'Cargando balance de créditos...'
+      await store.dispatch('credits/fetchBalance').catch(err => {
+        console.warn('[App] No se pudo cargar balance de créditos:', err)
+      })
     } catch (error) {
       console.error('Error al verificar autenticación:', error)
     } finally {

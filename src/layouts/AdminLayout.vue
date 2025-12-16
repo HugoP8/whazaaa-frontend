@@ -145,7 +145,8 @@ const currentPageTitle = computed(() => {
     'AdminUserDetails': 'Detalles de Usuario',
     'AdminSubscriptions': 'Gestión de Suscripciones',
     'AdminReports': 'Reportes',
-    'AdminPlans': 'Gestión de Planes'
+    'AdminPlans': 'Gestión de Planes',
+    'AdminSellers': 'Gestión de Vendedores'
   }
   return titles[route.name] || 'Panel Admin'
 })
@@ -166,6 +167,11 @@ const navItems = [
     title: 'Suscripciones',
     icon: 'mdi-crown',
     to: '/admin/subscriptions'
+  },
+  {
+    title: 'Vendedores',
+    icon: 'mdi-account-tie',
+    to: '/admin/sellers'
   },
   {
     title: 'Reportes',

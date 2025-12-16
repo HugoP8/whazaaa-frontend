@@ -479,18 +479,28 @@ const rules = {
 
 const handleSubmit = async () => {
   if (!valid.value) return
-  
+
   // Verificar que WhatsApp esté conectado
   if (!store.getters['whatsapp/isConnected']) {
     toast.error('WhatsApp no está conectado. Conecta primero.')
     return
   }
-  
+
   if (totalRecipients.value === 0) {
     toast.error('Debes seleccionar al menos un destinatario')
     return
   }
-  
+
+  // ⚡ VERIFICAR CRÉDITOS SUFICIENTES
+  // 1 CAMPAÑA = 1 CRÉDITO (sin importar destinatarios)
+  const totalCredits = store.getters['credits/totalCredits']
+  const requiredCredits = 1
+
+  if (totalCredits < requiredCredits) {
+    toast.error(`Créditos insuficientes. Necesitas ${requiredCredits} crédito, tienes ${totalCredits}`)
+    return
+  }
+
   loading.value = true
   
   try {
@@ -609,12 +619,15 @@ const handleSubmit = async () => {
       try {
         await store.dispatch('whatsapp/executeCampaign', result.id)
         toast.success(`Campaña "${campaign.value.name}" creada y ejecutándose`)
+
+        // ⚡ ACTUALIZAR BALANCE DE CRÉDITOS DESPUÉS DE ENVIAR
+        await store.dispatch('credits/fetchBalance')
       } catch (executeError) {
         console.error('Error ejecutando campaña:', executeError)
         toast.warning(`Campaña creada pero error al ejecutar: ${executeError.message}`)
       }
     }
-    
+
     // Dar tiempo para que se actualice el store antes de navegar
     setTimeout(() => {
       router.push('/campaigns')

@@ -19,6 +19,7 @@ import PricingView from '@/views/subscription/PricingView.vue'
 import SubscriptionView from '@/views/subscription/SubscriptionView.vue'
 import PaymentSuccessView from '@/views/subscription/PaymentSuccessView.vue'
 import PaymentCancelledView from '@/views/subscription/PaymentCancelledView.vue'
+import CreditHistoryView from '@/views/credits/CreditHistoryView.vue'
 
 // Admin Views
 import AdminLayout from '@/layouts/AdminLayout.vue'
@@ -28,6 +29,8 @@ import AdminUserDetails from '@/views/admin/AdminUserDetails.vue'
 import AdminReports from '@/views/admin/AdminReports.vue'
 import AdminPlans from '@/views/admin/AdminPlans.vue'
 import AdminSubscriptions from '@/views/admin/AdminSubscriptions.vue'
+import AdminSellers from '@/views/admin/AdminSellers.vue'
+import AdminRechargeRequests from '@/views/admin/AdminRechargeRequests.vue'
 
 // Debug View
 import AdminDebug from '@/views/AdminDebug.vue'
@@ -115,6 +118,11 @@ const routes = [
         component: PaymentCancelledView
       },
       {
+        path: 'credits/history',
+        name: 'CreditHistory',
+        component: CreditHistoryView
+      },
+      {
         path: 'debug-admin',
         name: 'DebugAdmin',
         component: AdminDebug
@@ -156,6 +164,16 @@ const routes = [
         path: 'subscriptions',
         name: 'AdminSubscriptions',
         component: AdminSubscriptions
+      },
+      {
+        path: 'sellers',
+        name: 'AdminSellers',
+        component: AdminSellers
+      },
+      {
+        path: 'recharge-requests',
+        name: 'AdminRechargeRequests',
+        component: AdminRechargeRequests
       }
     ]
   },

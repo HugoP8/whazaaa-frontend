@@ -15,45 +15,55 @@
         <QRCode />
       </v-col>
     </v-row>
-    
-    <!-- Estadísticas - Solo cuando está conectado -->
-    <v-row v-else>
-      <v-col
-        v-for="stat in stats"
-        :key="stat.title"
-        cols="12"
-        sm="6"
-        md="3"
-      >
-        <v-card
-          elevation="2"
-          rounded="xl"
-          class="hover-scale stats-card"
-          :class="{ 'loading-card': statsLoading }"
-        >
-          <v-card-text class="text-center pa-6">
-            <template v-if="statsLoading">
-              <v-skeleton-loader type="avatar" class="mb-4 mx-auto"></v-skeleton-loader>
-              <v-skeleton-loader type="heading" class="mb-2"></v-skeleton-loader>
-              <v-skeleton-loader type="text" width="60%"></v-skeleton-loader>
-            </template>
-            <template v-else>
-              <v-icon
-                :color="stat.color"
-                size="48"
-                class="mb-4"
-              >
-                {{ stat.icon }}
-              </v-icon>
-              <h3 class="text-h3 font-weight-bold">
-                {{ stat.value }}
-              </h3>
-              <p class="text-body-2 text-grey mt-1">
-                {{ stat.title }}
-              </p>
-            </template>
-          </v-card-text>
-        </v-card>
+
+    <!-- Sección de créditos - Solo cuando está conectado -->
+    <v-row v-if="isConnected" class="mb-4">
+      <v-col cols="12" md="4">
+        <CreditsWidget
+          @open-recharge-modal="showRechargeModal = true"
+        />
+      </v-col>
+
+      <!-- Estadísticas de campañas -->
+      <v-col cols="12" md="8">
+        <v-row>
+          <v-col
+            v-for="stat in stats"
+            :key="stat.title"
+            cols="6"
+            lg="3"
+          >
+            <v-card
+              elevation="2"
+              rounded="xl"
+              class="hover-scale stats-card"
+              :class="{ 'loading-card': statsLoading }"
+            >
+              <v-card-text class="text-center pa-4">
+                <template v-if="statsLoading">
+                  <v-skeleton-loader type="avatar" class="mb-2 mx-auto"></v-skeleton-loader>
+                  <v-skeleton-loader type="heading" class="mb-1"></v-skeleton-loader>
+                  <v-skeleton-loader type="text" width="60%"></v-skeleton-loader>
+                </template>
+                <template v-else>
+                  <v-icon
+                    :color="stat.color"
+                    size="40"
+                    class="mb-2"
+                  >
+                    {{ stat.icon }}
+                  </v-icon>
+                  <h3 class="text-h4 font-weight-bold">
+                    {{ stat.value }}
+                  </h3>
+                  <p class="text-caption text-grey mt-1">
+                    {{ stat.title }}
+                  </p>
+                </template>
+              </v-card-text>
+            </v-card>
+          </v-col>
+        </v-row>
       </v-col>
     </v-row>
     
@@ -279,6 +289,12 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Modal de recarga de créditos -->
+    <RechargeModal
+      v-model="showRechargeModal"
+      @success="handleRechargeSuccess"
+    />
   </div>
 </template>
 
@@ -286,8 +302,11 @@
 import { computed, onMounted, watch, ref, nextTick, onBeforeUnmount } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toastification'
 import QRCode from '@/components/whatsapp/QRCode.vue'
 import UsageWidget from '@/components/subscription/UsageWidget.vue'
+import CreditsWidget from '@/components/subscription/CreditsWidget.vue'
+import RechargeModal from '@/components/subscription/RechargeModal.vue'
 import { CAMPAIGN_STATUS_COLORS } from '@/utils/constants'
 import dayjs from 'dayjs'
 import { Chart, registerables } from 'chart.js'
@@ -298,6 +317,7 @@ Chart.register(...registerables)
 
 const store = useStore()
 const router = useRouter()
+const toast = useToast()
 
 // Referencias
 const messagesChart = ref(null)
@@ -309,6 +329,8 @@ const statsLoading = ref(false)
 const campaignsLoading = ref(false)
 const chartLoading = ref(false)
 const last7DaysStats = ref(null)
+const showRechargeModal = ref(false)
+const rechargeLoading = ref(false)
 
 // ✅ ACTUALIZADO: Usar nombres de campos del backend
 const campaignStats = ref({
@@ -341,6 +363,18 @@ const recentCampaigns = computed(() => {
   const campaigns = store.getters['campaigns/recentCampaigns'] || []
   console.log('[Dashboard] recentCampaigns:', campaigns.length)
   return campaigns
+})
+
+// Computed para balance de créditos
+const creditBalance = computed(() => {
+  const balance = store.getters['credits/balance']
+  return balance || {
+    total_credits: 0,
+    plan_credits: 0,
+    bonus_credits: 0,
+    plan_name: 'free',
+    plan_display_name: 'Gratuito'
+  }
 })
 
 // ✅ ACTUALIZADO: Usar nombres de campos del backend
@@ -428,9 +462,29 @@ const formatDate = (date) => {
 
 const handleActionClick = (action) => {
   if (action.disabled) return
-  
+
   if (action.to) {
     router.push(action.to)
+  }
+}
+
+// Método para manejar éxito de recarga
+const handleRechargeSuccess = async () => {
+  console.log('[Dashboard] Recarga exitosa - Actualizando balance...')
+  // Recargar balance después de solicitud exitosa
+  await loadCreditBalance()
+  toast.success('Solicitud de recarga registrada. Contacta a tu vendedor para completar el pago.')
+}
+
+// Cargar balance de créditos
+const loadCreditBalance = async () => {
+  try {
+    console.log('[Dashboard] Cargando balance de créditos...')
+    await store.dispatch('credits/fetchBalance')
+    console.log('[Dashboard] Balance de créditos cargado')
+  } catch (error) {
+    console.error('[Dashboard] Error cargando balance de créditos:', error)
+    // No mostrar error al usuario, el balance se muestra como 0 por defecto
   }
 }
 
@@ -633,7 +687,8 @@ watch(isConnected, async (newValue, oldValue) => {
     await Promise.allSettled([
       loadCampaignStats(),
       loadRecentCampaigns(),
-      loadLast7DaysStats()  // ✅ NUEVO: Cargar estadísticas de gráfico
+      loadLast7DaysStats(),
+      loadCreditBalance()  // ✅ NUEVO: Cargar balance de créditos
     ])
 
     console.log('[Dashboard] Datos cargados exitosamente')
@@ -655,8 +710,12 @@ onMounted(async () => {
       await Promise.allSettled([
         loadCampaignStats(),
         loadRecentCampaigns(),
-        loadLast7DaysStats()  // ✅ NUEVO: Cargar estadísticas de gráfico
+        loadLast7DaysStats(),
+        loadCreditBalance()  // ✅ NUEVO: Cargar balance de créditos
       ])
+    } else {
+      // Aunque no esté conectado, intentar cargar el balance de créditos
+      await loadCreditBalance()
     }
   } catch (error) {
     console.error('[Dashboard] Error en inicialización:', error)
