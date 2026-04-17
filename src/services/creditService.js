@@ -37,12 +37,13 @@ export const creditService = {
   },
 
   // ========== ADMIN - GESTIÓN DE CRÉDITOS ==========
+  // NOTA: Las rutas admin de créditos están bajo /credits/admin/... en el backend
 
   /**
    * Recargar créditos manualmente a un usuario (ADMIN)
    */
   async adminRechargeCredits(userId, data) {
-    const response = await api.post(`/admin/credits/recharge/${userId}`, data)
+    const response = await api.post(`/credits/admin/recharge/${userId}`, data)
     return response.data
   },
 
@@ -50,7 +51,7 @@ export const creditService = {
    * Obtener balance de créditos de cualquier usuario (ADMIN)
    */
   async adminGetUserBalance(userId) {
-    const response = await api.get(`/admin/credits/balance/${userId}`)
+    const response = await api.get(`/credits/admin/balance/${userId}`)
     return response.data
   },
 
@@ -58,7 +59,7 @@ export const creditService = {
    * Obtener historial de créditos de un usuario (ADMIN)
    */
   async adminGetUserHistory(userId, params = {}) {
-    const response = await api.get(`/admin/credits/history/${userId}`, { params })
+    const response = await api.get(`/credits/admin/history/${userId}`, { params })
     return response.data
   },
 
@@ -66,7 +67,7 @@ export const creditService = {
    * Cambiar plan con créditos incluidos (ADMIN)
    */
   async adminChangePlanWithCredits(userId, data) {
-    const response = await api.post(`/admin/credits/change-plan/${userId}`, data)
+    const response = await api.post(`/credits/admin/change-plan/${userId}`, data)
     return response.data
   },
 
@@ -74,7 +75,7 @@ export const creditService = {
    * Obtener estadísticas de uso de créditos (ADMIN)
    */
   async adminGetCreditStats() {
-    const response = await api.get('/admin/credits/stats')
+    const response = await api.get('/credits/admin/stats')
     return response.data
   },
 
@@ -82,7 +83,7 @@ export const creditService = {
    * Obtener lista de solicitudes de recarga pendientes (ADMIN)
    */
   async adminGetPendingRecharges(params = {}) {
-    const response = await api.get('/admin/credits/pending-recharges', { params })
+    const response = await api.get('/credits/admin/pending-recharges', { params })
     return response.data
   },
 
@@ -90,7 +91,7 @@ export const creditService = {
    * Marcar solicitud de recarga como procesada (ADMIN)
    */
   async adminProcessRecharge(requestId, data) {
-    const response = await api.post(`/admin/credits/process-recharge/${requestId}`, data)
+    const response = await api.post(`/credits/admin/process-recharge/${requestId}`, data)
     return response.data
   }
 }

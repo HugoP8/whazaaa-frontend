@@ -31,6 +31,7 @@ import AdminPlans from '@/views/admin/AdminPlans.vue'
 import AdminSubscriptions from '@/views/admin/AdminSubscriptions.vue'
 import AdminSellers from '@/views/admin/AdminSellers.vue'
 import AdminRechargeRequests from '@/views/admin/AdminRechargeRequests.vue'
+import AdminVideoRewards from '@/views/admin/AdminVideoRewards.vue'
 
 // Debug View
 import AdminDebug from '@/views/AdminDebug.vue'
@@ -174,6 +175,11 @@ const routes = [
         path: 'recharge-requests',
         name: 'AdminRechargeRequests',
         component: AdminRechargeRequests
+      },
+      {
+        path: 'video-rewards',
+        name: 'AdminVideoRewards',
+        component: AdminVideoRewards
       }
     ]
   },

@@ -421,21 +421,47 @@ onMounted(() => {
 
 .bg-primary {
   background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-primary :deep(*) {
+  color: white !important;
 }
 
 .bg-success {
   background: linear-gradient(135deg, #43a047 0%, #388e3c 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-success :deep(*) {
+  color: white !important;
 }
 
 .bg-info {
   background: linear-gradient(135deg, #0288d1 0%, #0277bd 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-info :deep(*) {
+  color: white !important;
 }
 
 :deep(.v-table thead tr th) {
   background: #f5f5f5 !important;
   font-weight: 600;
+  color: #374151 !important;
+}
+
+:deep(.v-table tbody tr:hover) {
+  background: #f1f5f9 !important;
+}
+
+/* Card hover effects */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
 }
 </style>

@@ -123,7 +123,7 @@
         </v-alert>
 
         <!-- Action Buttons -->
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-column gap-2">
           <v-btn
             color="primary"
             variant="elevated"
@@ -136,13 +136,28 @@
           </v-btn>
 
           <v-btn
+            color="success"
+            variant="tonal"
+            size="small"
+            block
+            @click="openVideoRewardModal"
+            prepend-icon="mdi-play-circle"
+          >
+            <span class="d-flex align-center">
+              Ganar Créditos Gratis
+              <v-chip size="x-small" color="success" class="ml-2">+1</v-chip>
+            </span>
+          </v-btn>
+
+          <v-btn
             color="grey"
             variant="outlined"
             size="small"
-            icon
+            block
             @click="$router.push('/subscription')"
+            prepend-icon="mdi-information"
           >
-            <v-icon>mdi-information</v-icon>
+            Ver Mi Plan
           </v-btn>
         </div>
 
@@ -165,7 +180,7 @@ const store = useStore()
 const router = useRouter()
 
 // Emits
-const emit = defineEmits(['open-recharge-modal'])
+const emit = defineEmits(['open-recharge-modal', 'open-video-reward-modal'])
 
 // Estado
 const loading = ref(false)
@@ -215,6 +230,10 @@ const loadBalance = async () => {
 
 const openRechargeModal = () => {
   emit('open-recharge-modal')
+}
+
+const openVideoRewardModal = () => {
+  emit('open-video-reward-modal')
 }
 
 // Lifecycle

@@ -144,9 +144,11 @@ const currentPageTitle = computed(() => {
     'AdminUsers': 'Gestión de Usuarios',
     'AdminUserDetails': 'Detalles de Usuario',
     'AdminSubscriptions': 'Gestión de Suscripciones',
+    'AdminRechargeRequests': 'Solicitudes de Recarga',
     'AdminReports': 'Reportes',
     'AdminPlans': 'Gestión de Planes',
-    'AdminSellers': 'Gestión de Vendedores'
+    'AdminSellers': 'Gestión de Vendedores',
+    'AdminVideoRewards': 'Video Rewards'
   }
   return titles[route.name] || 'Panel Admin'
 })
@@ -169,9 +171,19 @@ const navItems = [
     to: '/admin/subscriptions'
   },
   {
+    title: 'Solicitudes Recarga',
+    icon: 'mdi-cash-plus',
+    to: '/admin/recharge-requests'
+  },
+  {
     title: 'Vendedores',
     icon: 'mdi-account-tie',
     to: '/admin/sellers'
+  },
+  {
+    title: 'Video Rewards',
+    icon: 'mdi-play-circle',
+    to: '/admin/video-rewards'
   },
   {
     title: 'Reportes',
@@ -201,27 +213,39 @@ const handleLogout = async () => {
 }
 
 .v-list-item--active {
-  background: rgba(59, 130, 246, 0.2);
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.1) 100%) !important;
+  border-left: 3px solid #3b82f6;
 }
 
 .v-list-item:hover:not(.v-list-item--active) {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 :deep(.v-list-item__content) {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 :deep(.v-list-item--active .v-list-item__content) {
-  color: white;
+  color: #ffffff;
+  font-weight: 500;
 }
 
 :deep(.v-list-item__prepend .v-icon) {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 :deep(.v-list-item--active .v-list-item__prepend .v-icon) {
-  color: white;
+  color: #60a5fa;
   opacity: 1;
+}
+
+/* Mejoras para el header */
+:deep(.v-app-bar) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Mejoras para el contenido principal */
+:deep(.v-main) {
+  background-color: #f8fafc;
 }
 </style>

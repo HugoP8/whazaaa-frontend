@@ -61,16 +61,16 @@
           </div>
         </div>
         
-        <!-- Estado de carga inicial -->
+        <!-- Estado de carga / reconexión automática -->
         <div v-else-if="connecting && !qrCode && !isConnected" key="loading">
-          <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
-          <p class="mt-4 text-body-1">Generando código QR...</p>
-          <p class="text-caption text-grey mt-2">Esto puede tomar unos segundos</p>
-          
-          <v-btn 
-            color="red" 
-            variant="text" 
-            class="mt-3" 
+          <v-progress-circular indeterminate color="green" size="64"></v-progress-circular>
+          <p class="mt-4 text-body-1">Conectando WhatsApp...</p>
+          <p class="text-caption text-grey mt-2">Reconectando sesión, esto puede tomar unos segundos</p>
+
+          <v-btn
+            color="red"
+            variant="text"
+            class="mt-3"
             @click="cancelConnection"
           >
             Cancelar
@@ -179,38 +179,23 @@
           </div>
         </div>
         
-        <!-- Estado inicial -->
+        <!-- Estado inicial / conectando automático -->
         <div v-else key="initial">
-          <v-icon size="64" color="grey-lighten-1">mdi-qrcode</v-icon>
-          <p class="mt-4 text-body-1">Conecta tu WhatsApp para enviar mensajes masivos</p>
-          <p class="text-body-2 text-grey mt-2">
-            Presiona el botón para generar un código QR y vincular tu cuenta
-          </p>
-          
-          <div class="mt-4">
-            <v-btn 
-              color="green" 
-              @click="connect"
-              :loading="connecting"
-              size="large"
-              elevation="2"
-              class="mr-2"
-            >
-              <v-icon left>mdi-whatsapp</v-icon>
-              Conectar WhatsApp
-            </v-btn>
-            
-            <v-btn 
-              color="blue" 
-              variant="outlined"
-              @click="checkConnectionStatus"
-              :loading="checkingStatus"
-              size="large"
-            >
-              <v-icon left>mdi-refresh</v-icon>
-              Verificar Estado
-            </v-btn>
-          </div>
+          <v-progress-circular indeterminate color="green" size="64"></v-progress-circular>
+          <p class="mt-4 text-body-1">Conectando WhatsApp...</p>
+          <p class="text-caption text-grey mt-2">Reconectando sesión guardada</p>
+
+          <v-btn
+            color="grey"
+            variant="text"
+            class="mt-3"
+            @click="connect"
+            :loading="connecting"
+            size="small"
+          >
+            <v-icon left>mdi-refresh</v-icon>
+            Reintentar
+          </v-btn>
         </div>
       </v-card-text>
       
@@ -384,14 +369,9 @@ const goToCampaigns = () => {
 }
 
 const onImageError = (event) => {
-  console.error('[QRCode] Error cargando imagen QR:', event)
-  console.log('[QRCode] QR Code actual:', qrCode.value)
-  
-  // Si la imagen no carga, intentar regenerar el QR
-  setTimeout(() => {
-    console.log('[QRCode] Reintentando carga de QR por error de imagen...')
-    regenerateQR()
-  }, 2000)
+  // No auto-regenerar en error de imagen — puede causar loop.
+  // El QR se limpiará solo cuando expire (30s) y Baileys emitirá uno nuevo automáticamente.
+  console.error('[QRCode] Error cargando imagen QR — esperando nuevo QR de Baileys')
 }
 
 const onImageLoad = () => {
@@ -455,18 +435,20 @@ watch(isConnected, (newValue, oldValue) => {
   }
 })
 
-// Watch para detectar cuando aparece el QR y agregar timeout
+// Watch para detectar cuando aparece el QR y agregar timeout de limpieza
 watch(qrCode, (newValue, oldValue) => {
   if (newValue && !oldValue) {
-    console.log('[QRCode] QR Code apareció - iniciando timeout de 30 segundos')
-    
-    // QR válido por 30 segundos, luego regenerar automáticamente
+    console.log('[QRCode] QR Code apareció - iniciando timeout de limpieza 30s')
+
+    // Limpiar el QR viejo a los 30s — Baileys emitirá uno nuevo automáticamente.
+    // NO llamar regenerateQR/connect aquí: eso crearía un nuevo socket WA en el backend
+    // matando la sesión actual y generando un loop infinito de QRs.
     setTimeout(() => {
       if (qrCode.value && !isConnected.value) {
-        console.log('[QRCode] QR expirado después de 30 segundos - regenerando...')
-        regenerateQR()
+        console.log('[QRCode] QR expirado - limpiando UI, esperando nuevo QR del backend')
+        store.commit('whatsapp/SET_QR_CODE', null)
       }
-    }, 30000) // 30 segundos
+    }, 30000)
   }
 })
 
@@ -475,22 +457,25 @@ let socketMonitorInterval = null
 
 onMounted(async () => {
   console.log('[QRCode] Componente montado')
-  
+
   if (!isAuthenticated.value) {
     console.warn('[QRCode] Usuario no autenticado, redirigiendo a login')
     router.push('/login')
     return
   }
-  
+
   // Iniciar monitoreo del socket
   socketMonitorInterval = monitorSocket()
-  
-  // Verificar estado actual de WhatsApp
-  try {
-    await store.dispatch('whatsapp/checkStatus')
-    console.log('[QRCode] Estado verificado exitosamente')
-  } catch (error) {
-    console.error('[QRCode] Error verificando estado:', error)
+
+  // Auto-conectar: usa sesión guardada si existe (sin QR), o genera QR nuevo
+  if (!isConnected.value && !connecting.value) {
+    try {
+      console.log('[QRCode] Iniciando auto-conexión...')
+      await store.dispatch('whatsapp/connect')
+      console.log('[QRCode] Auto-conexión iniciada exitosamente')
+    } catch (error) {
+      console.error('[QRCode] Error en auto-conexión:', error)
+    }
   }
 })
 

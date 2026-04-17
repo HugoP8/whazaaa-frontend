@@ -21,6 +21,7 @@
       <v-col cols="12" md="4">
         <CreditsWidget
           @open-recharge-modal="showRechargeModal = true"
+          @open-video-reward-modal="showVideoRewardModal = true"
         />
       </v-col>
 
@@ -295,6 +296,12 @@
       v-model="showRechargeModal"
       @success="handleRechargeSuccess"
     />
+
+    <!-- Modal de Video Rewards -->
+    <VideoRewardModal
+      v-model="showVideoRewardModal"
+      @credits-earned="handleVideoCreditsEarned"
+    />
   </div>
 </template>
 
@@ -307,6 +314,7 @@ import QRCode from '@/components/whatsapp/QRCode.vue'
 import UsageWidget from '@/components/subscription/UsageWidget.vue'
 import CreditsWidget from '@/components/subscription/CreditsWidget.vue'
 import RechargeModal from '@/components/subscription/RechargeModal.vue'
+import VideoRewardModal from '@/components/credits/VideoRewardModal.vue'
 import { CAMPAIGN_STATUS_COLORS } from '@/utils/constants'
 import dayjs from 'dayjs'
 import { Chart, registerables } from 'chart.js'
@@ -330,6 +338,7 @@ const campaignsLoading = ref(false)
 const chartLoading = ref(false)
 const last7DaysStats = ref(null)
 const showRechargeModal = ref(false)
+const showVideoRewardModal = ref(false)
 const rechargeLoading = ref(false)
 
 // ✅ ACTUALIZADO: Usar nombres de campos del backend
@@ -474,6 +483,14 @@ const handleRechargeSuccess = async () => {
   // Recargar balance después de solicitud exitosa
   await loadCreditBalance()
   toast.success('Solicitud de recarga registrada. Contacta a tu vendedor para completar el pago.')
+}
+
+// Método para manejar créditos ganados por video
+const handleVideoCreditsEarned = async (data) => {
+  console.log('[Dashboard] Créditos ganados por video:', data)
+  toast.success(`¡Has ganado ${data.credits} crédito${data.credits > 1 ? 's' : ''}!`)
+  // El balance ya se actualiza desde el modal, pero refrescamos por si acaso
+  await loadCreditBalance()
 }
 
 // Cargar balance de créditos
@@ -699,27 +716,26 @@ watch(isConnected, async (newValue, oldValue) => {
 onMounted(async () => {
   console.log('[Dashboard] Componente montado')
 
+  // Cargar balance de créditos siempre (no requiere WhatsApp)
+  loadCreditBalance().catch(() => {})
+
   try {
-    // Verificar estado de WhatsApp sin intentar conectar
-    await store.dispatch('whatsapp/checkStatus')
-    console.log('[Dashboard] Estado de WhatsApp verificado')
+    // Auto-conectar WhatsApp: si hay sesión guardada se reconecta automáticamente sin QR
+    await store.dispatch('whatsapp/connect')
+    console.log('[Dashboard] Auto-conexión WhatsApp iniciada')
 
     // Si ya está conectado, cargar datos inmediatamente
     if (isConnected.value) {
-      console.log('[Dashboard] Ya conectado - Cargando datos iniciales...')
+      console.log('[Dashboard] Conectado - Cargando datos iniciales...')
       await Promise.allSettled([
         loadCampaignStats(),
         loadRecentCampaigns(),
-        loadLast7DaysStats(),
-        loadCreditBalance()  // ✅ NUEVO: Cargar balance de créditos
+        loadLast7DaysStats()
       ])
-    } else {
-      // Aunque no esté conectado, intentar cargar el balance de créditos
-      await loadCreditBalance()
     }
   } catch (error) {
-    console.error('[Dashboard] Error en inicialización:', error)
-    // No bloquear la carga del dashboard por errores de verificación
+    console.error('[Dashboard] Error en auto-conexión WhatsApp:', error)
+    // No bloquear el dashboard - el componente QRCode mostrará la opción de conectar
   }
 })
 

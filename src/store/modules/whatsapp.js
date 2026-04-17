@@ -3,6 +3,34 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
+// Evitar spam de toasts: solo mostrar si el estado realmente cambió
+let _lastConnectedState = null
+let _lastReauthToastTime = 0
+let _lastErrorToastTime = 0
+function _notifyConnected() {
+  if (_lastConnectedState === true) return
+  _lastConnectedState = true
+  toast.success('WhatsApp conectado', { timeout: 3000 })
+}
+function _notifyDisconnected(msg) {
+  if (_lastConnectedState === false) return
+  _lastConnectedState = false
+  toast.warning(msg, { timeout: 3000 })
+}
+function _notifyReauth() {
+  const now = Date.now()
+  if (now - _lastReauthToastTime < 10000) return
+  _lastReauthToastTime = now
+  _lastConnectedState = false
+  toast.warning('Sesión expirada. Escanea el QR.', { timeout: 4000 })
+}
+function _notifyError(msg) {
+  const now = Date.now()
+  if (now - _lastErrorToastTime < 8000) return
+  _lastErrorToastTime = now
+  toast.error(msg, { timeout: 4000 })
+}
+
 // Socket event handlers
 const createSocketEventHandlers = (commit, userId, cleanup) => {
   const handlers = {
@@ -21,20 +49,20 @@ const createSocketEventHandlers = (commit, userId, cleanup) => {
     connectionStatus: (status) => {
       console.log(`[WhatsApp Store] Evento connection-status para userId: ${userId}`, status)
       commit('SET_CONNECTION_INFO', status)
-      
+
       if (status.connected) {
         commit('SET_CONNECTED', true)
         commit('SET_QR_CODE', null)
-        toast.success('Conectado a WhatsApp')
+        _notifyConnected()
       } else if (status.qr) {
         commit('SET_QR_CODE', status.qr)
       }
     },
-    
+
     error: (error) => {
       console.error(`[WhatsApp Store] Error en socket para userId ${userId}:`, error)
       commit('SET_CONNECTION_ERROR', error.message || 'Error de conexión')
-      toast.error(error.message || 'Error en la conexión de WhatsApp')
+      _notifyError(error.message || 'Error en la conexión de WhatsApp')
     }
   }
   
@@ -135,6 +163,13 @@ const mutations = {
     state.campaignProgress = progress
   },
 
+  // Atomic: set connected=false AND connecting=true in one commit to prevent
+  // QRCode from mounting and calling connect() while backend is already reconnecting
+  SET_RECONNECTING(state) {
+    state.connected = false
+    state.connecting = true
+  },
+
   CONNECTION_STATUS_UPDATE(state, status) {
     console.log('[WhatsApp Store] CONNECTION_STATUS_UPDATE:', status)
     if (status.connected) {
@@ -163,7 +198,7 @@ const mutations = {
 }
 
 const actions = {
-  async connect({ commit, rootState, state }) {
+  async connect({ commit, dispatch, rootState, state }) {
     console.log('[WhatsApp Store] Ejecutando acción connect')
     
     if (state.connecting) {
@@ -198,14 +233,40 @@ const actions = {
         
         onConnectionStatus: (status) => {
           console.log('[WhatsApp Store] Estado de conexión:', status)
-          commit('SET_CONNECTION_INFO', status)
-          
+
           if (status.connected) {
+            // Conexión establecida exitosamente
             commit('SET_CONNECTED', true)
+            commit('SET_CONNECTING', false)
             commit('SET_QR_CODE', null)
-            toast.success('¡WhatsApp conectado exitosamente!')
+            commit('SET_CONNECTION_INFO', status.user || status)
+            commit('SET_CONNECTION_ERROR', null)
+            _notifyConnected()
+          } else if (status.requiresReauth) {
+            // Sesión destruida (Bad MAC / loggedOut) - necesita nuevo QR
+            console.warn('[WhatsApp Store] Sesión destruida - se requiere nuevo QR')
+            commit('SET_CONNECTED', false)
+            commit('SET_QR_CODE', null)
+            commit('SET_CONNECTING', false)
+            commit('SET_CONNECTION_INFO', null)
+            _notifyReauth()
+            // Solicitar nuevo QR - con guardia para no crear loop
+            setTimeout(() => {
+              if (!state.connecting) dispatch('connect')
+            }, 2000)
+          } else if (status.reconnecting || status.status === 'connecting') {
+            // Backend reconectando automáticamente - mostrar estado "conectando"
+            console.log('[WhatsApp Store] Reconectando automáticamente...')
+            commit('SET_CONNECTED', false)
+            commit('SET_CONNECTING', true)
           } else if (status.qr) {
+            // Backend enviando QR directamente en el status (caso especial)
             commit('SET_QR_CODE', status.qr)
+          } else {
+            // Desconectado definitivamente (sin reconexión automática)
+            console.warn('[WhatsApp Store] Desconectado sin reconexión automática')
+            commit('SET_CONNECTED', false)
+            commit('SET_CONNECTING', false)
           }
         },
         
@@ -215,33 +276,11 @@ const actions = {
           const errorMessage = error.message || error
           commit('SET_CONNECTION_ERROR', errorMessage)
 
-          // Manejar errores específicos de WhatsApp
-          if (errorMessage.includes('Bad MAC') || errorMessage.includes('bad_mac')) {
-            console.log('[WhatsApp Store] Error Bad MAC detectado - requiere reconexión')
-            toast.error('Error de autenticación WhatsApp. Se requiere nueva conexión.')
-
-            // Limpiar estado y forzar reconexión
-            commit('SET_CONNECTED', false)
-            commit('SET_QR_CODE', null)
-            commit('SET_CONNECTION_INFO', null)
-
-            // Intentar reconectar después de un momento
-            setTimeout(() => {
-              dispatch('connect')
-            }, 2000)
-          } else if (errorMessage.includes('Connection closed') || errorMessage.includes('connection_lost')) {
-            console.log('[WhatsApp Store] Conexión perdida - intentando reconectar')
-            toast.warning('Conexión WhatsApp perdida. Reintentando...')
-
-            commit('SET_CONNECTED', false)
-
-            // Intentar reconectar
-            setTimeout(() => {
-              dispatch('connect')
-            }, 3000)
-          } else {
-            toast.error(errorMessage || 'Error en WhatsApp')
-          }
+          // NOTA: NO disparamos dispatch('connect') desde aquí.
+          // El backend maneja su propia reconexión automática con backoff exponencial.
+          // Cuando se reconecte, emitirá 'connection-status' → el handler de arriba actualizará el estado.
+          // Disparar connect() desde el frontend duplica sockets → conflicto 440 → más desconexiones → loop.
+          _notifyError(errorMessage || 'Error en WhatsApp')
         },
         
         onMessageSent: (data) => {
@@ -260,11 +299,6 @@ const actions = {
           commit('CAMPAIGN_PROGRESS', data)
         },
 
-        onConnectionStatus: (status) => {
-          console.log('[WhatsApp Store] Estado de conexión:', status)
-          commit('CONNECTION_STATUS_UPDATE', status)
-        },
-
         onCampaignCompleted: (data) => {
           console.log('[WhatsApp Store] Campaña completada:', data)
           // Emitir evento global para que los componentes puedan reaccionar
@@ -273,31 +307,7 @@ const actions = {
 
         onCampaignError: (data) => {
           console.log('[WhatsApp Store] Error en campaña:', data)
-
-          // Verificar si el error es relacionado con WhatsApp Bad MAC
-          if (data.error && (data.error.includes('Bad MAC') || data.error.includes('bad_mac'))) {
-            console.log('[WhatsApp Store] Error Bad MAC en campaña - forzando reconexión')
-            toast.error('Error de autenticación en campaña. Reconectando WhatsApp...')
-
-            // Marcar como desconectado y limpiar estado
-            commit('SET_CONNECTED', false)
-            commit('SET_QR_CODE', null)
-            commit('SET_CONNECTION_INFO', null)
-
-            // Intentar reconectar automáticamente
-            setTimeout(() => {
-              console.log('[WhatsApp Store] Iniciando reconexión automática por error Bad MAC')
-              dispatch('connect')
-            }, 3000)
-          } else if (data.error && data.error.includes('Connection')) {
-            console.log('[WhatsApp Store] Error de conexión en campaña - intentando reconectar')
-            toast.warning('Error de conexión en campaña. Verificando estado WhatsApp...')
-
-            // Verificar estado actual
-            dispatch('checkStatus')
-          }
-
-          // Emitir evento global para que los componentes puedan reaccionar
+          // El backend maneja su propia reconexión - solo emitir evento para la UI
           document.dispatchEvent(new CustomEvent('campaign-error', { detail: data }))
         }
       }
@@ -331,12 +341,19 @@ const actions = {
       const connectResponse = await whatsappService.connect()
       console.log('[WhatsApp Store] Conexión iniciada')
 
+      // Backend ya está reconectando automáticamente — no cambiar estado
+      if (connectResponse.message?.includes('Reconexión en progreso')) {
+        console.log('[WhatsApp Store] Backend reconectando automáticamente, mantener estado connecting')
+        commit('SET_CONNECTING', true) // ensure UI shows reconnecting
+        return
+      }
+
       // Si ya estaba conectado, procesar el estado recibido
       if (connectResponse.status && connectResponse.message?.includes('Ya está conectado')) {
         console.log('[WhatsApp Store] Usuario ya conectado, procesando estado:', connectResponse.status)
         const status = connectResponse.status
 
-        // 🛡️ FIX DEFENSIVO: Validar estado real
+        // Validar estado real: solo conectado si state==='connected' Y hay usuario
         const isReallyConnected = status.state === 'connected' && status.user !== null
 
         commit('SET_CONNECTED', isReallyConnected)
@@ -345,22 +362,33 @@ const actions = {
         if (isReallyConnected) {
           commit('SET_CONNECTION_ERROR', null)
           commit('SET_QR_CODE', null)
+          commit('SET_CONNECTING', false)
           return
         }
+
+        // Backend dice "ya conectado" pero no está realmente → limpiar connecting
+        // para que el socket handler pueda actualizar el estado correctamente
+        commit('SET_CONNECTING', false)
+        return
       }
 
     } catch (error) {
       console.error('[WhatsApp Store] Error conectando:', error)
       commit('SET_CONNECTION_ERROR', error.message)
-      toast.error(error.message || 'Error al conectar WhatsApp')
-      throw error
-    } finally {
       commit('SET_CONNECTING', false)
+      _notifyError(error.message || 'Error al conectar WhatsApp')
+      throw error
     }
+    // NOTE: SET_CONNECTING(false) es manejado por socket events:
+    //   connection-status.connected=true  → SET_CONNECTING(false)
+    //   connection-status.reconnecting=true → SET_CONNECTING(true)
+    //   Desconexión definitiva → SET_CONNECTING(false)
   },
   
   async disconnect({ commit, state }) {
     console.log('[WhatsApp Store] Ejecutando acción disconnect')
+    // Resetear para que la próxima conexión muestre toast
+    _lastConnectedState = null
     
     // Ejecutar limpieza si existe
     if (state.cleanupSocket) {
@@ -709,53 +737,18 @@ const actions = {
 }
 
 const getters = {
-  isConnected: state => {
-    console.log('[WhatsApp Store] getter isConnected:', state.connected)
-    return state.connected
-  },
-  isConnecting: state => {
-    console.log('[WhatsApp Store] getter isConnecting:', state.connecting)
-    return state.connecting
-  },
-  qrCode: state => {
-    console.log('[WhatsApp Store] getter qrCode:', state.qrCode ? 'Presente' : 'No presente')
-    return state.qrCode
-  },
-  contacts: state => {
-    console.log('[WhatsApp Store] getter contacts:', state.contacts.length, 'contactos')
-    return state.contacts
-  },
-  groups: state => {
-    console.log('[WhatsApp Store] getter groups:', state.groups.length, 'grupos')
-    return state.groups
-  },
-  connectionInfo: state => {
-    console.log('[WhatsApp Store] getter connectionInfo:', state.connectionInfo)
-    return state.connectionInfo
-  },
-  connectionError: state => {
-    console.log('[WhatsApp Store] getter connectionError:', state.connectionError)
-    return state.connectionError
-  },
-
-  campaignProgress: state => {
-    console.log('[WhatsApp Store] getter campaignProgress:', state.campaignProgress)
-    return state.campaignProgress
-  },
-
-  todayMessagesCount: state => {
-    console.log('[WhatsApp Store] getter todayMessagesCount:', state.todayMessagesCount)
-    return state.todayMessagesCount
-  },
-
-  monthlyLimit: state => {
-    console.log('[WhatsApp Store] getter monthlyLimit:', state.monthlyLimit)
-    return state.monthlyLimit
-  },
-
+  isConnected: state => state.connected,
+  isConnecting: state => state.connecting,
+  qrCode: state => state.qrCode,
+  contacts: state => state.contacts,
+  groups: state => state.groups,
+  connectionInfo: state => state.connectionInfo,
+  connectionError: state => state.connectionError,
+  campaignProgress: state => state.campaignProgress,
+  todayMessagesCount: state => state.todayMessagesCount,
+  monthlyLimit: state => state.monthlyLimit,
   messagesProgress: state => {
     const progress = state.monthlyLimit > 0 ? (state.todayMessagesCount / state.monthlyLimit) * 100 : 0
-    console.log('[WhatsApp Store] getter messagesProgress:', progress)
     return Math.min(progress, 100)
   }
 }

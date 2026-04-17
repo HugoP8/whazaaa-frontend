@@ -206,10 +206,9 @@ const rules = reactive({
 })
 
 const handleLogin = async () => {
-  console.log('handleLogin iniciado - email:', email.value, 'password:', password.value)
+  console.log('handleLogin iniciado - email:', email.value)
   if (!email.value || !password.value) {
     error.value = 'Por favor, completa todos los campos'
-    console.log('Campos email o contraseña vacíos')
     return
   }
 
@@ -222,33 +221,25 @@ const handleLogin = async () => {
       email: email.value,
       password: password.value
     }
-    console.log('Enviando solicitud a /api/auth/login con:', loginData)
-    const response = await axios.post('http://localhost:3000/api/auth/login', loginData)
-    console.log('Respuesta del servidor:', response.data)
     
-    if (response.status === 200 && response.data.token) {
-      localStorage.setItem('token', response.data.token)
-      localStorage.setItem('user', JSON.stringify(response.data.user || {}))
-      store.commit('auth/SET_TOKEN', response.data.token)
-      store.commit('auth/SET_USER', response.data.user || {})
-      console.log('Token y usuario guardados en localStorage y Vuex')
-      showSuccess.value = true
-      console.log('Login exitoso, preparando redirección')
-      setTimeout(() => {
-        router.push('/dashboard').then(() => {
-          console.log('Redirección completada')
-        }).catch(err => {
-          console.error('Error en redirección:', err)
-          error.value = 'Error al redirigir al dashboard'
-        })
-      }, 1500)
-    } else {
-      console.log('Respuesta no exitosa:', response.status, response.data)
-      error.value = 'Error al iniciar sesión'
-    }
+    console.log('Iniciando login via Vuex Action...')
+    // Usar la acción de login de Vuex que ya maneja token, localStorage y redirección
+    await store.dispatch('auth/login', loginData)
+    
+    showSuccess.value = true
+    console.log('Login exitoso reportado por Vuex')
+    
+    // La redirección a /dashboard ya la maneja la acción de login en store/modules/auth.js
+    // Pero si queremos asegurar que suceda aquí después del mensaje de éxito:
+    setTimeout(() => {
+      if (router.currentRoute.value.path !== '/dashboard') {
+        router.push('/dashboard')
+      }
+    }, 1500)
+
   } catch (err) {
-    console.error('Error en la solicitud:', err.response ? err.response.data : err.message)
-    error.value = err.response?.data?.error || 'Error al iniciar sesión'
+    console.error('Error en handleLogin:', err)
+    error.value = err.response?.data?.message || err.message || 'Error al iniciar sesión'
     toast.error(error.value)
   } finally {
     loading.value = false

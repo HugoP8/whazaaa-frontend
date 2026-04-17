@@ -602,11 +602,20 @@ onMounted(() => {
 
 .bg-warning {
   background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  color: white !important;
+}
+
+.bg-warning :deep(*) {
+  color: white !important;
 }
 
 .bg-orange {
   background: linear-gradient(135deg, #fb8c00 0%, #e65100 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-orange :deep(*) {
+  color: white !important;
 }
 
 .bg-warning-lighten-5 {
@@ -614,24 +623,34 @@ onMounted(() => {
 }
 
 :deep(.v-table thead tr th) {
-  background: #f5f5f5 !important;
+  background: #f8fafc !important;
   font-weight: 600;
   white-space: nowrap;
+  color: #374151 !important;
 }
 
 :deep(.v-table tbody tr:hover) {
-  background: #f8f9fa !important;
+  background: #f1f5f9 !important;
 }
 
 .text-error {
-  color: #ef5350;
+  color: #ef5350 !important;
 }
 
 .text-warning {
-  color: #ff9800;
+  color: #ff9800 !important;
 }
 
 .text-success {
-  color: #4caf50;
+  color: #4caf50 !important;
+}
+
+/* Card animations */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
 }
 </style>

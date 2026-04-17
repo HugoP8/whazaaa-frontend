@@ -456,6 +456,30 @@ onMounted(() => {
 
 .bg-gradient-admin {
   background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-gradient-admin :deep(*) {
+  color: white !important;
+}
+
+/* Mejoras en las tarjetas */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Mejoras en la tabla */
+:deep(.v-table thead tr th) {
+  background: #f8fafc !important;
+  font-weight: 600;
+  color: #374151 !important;
+}
+
+:deep(.v-table tbody tr:hover) {
+  background: #f1f5f9 !important;
 }
 </style>

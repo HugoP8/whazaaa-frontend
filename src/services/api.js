@@ -38,12 +38,14 @@ const setupInterceptors = (apiInstance, instanceName = 'API') => {
 
       if (token) {
         try {
-          // Si está guardado como JSON, parsearlo
-          const parsed = JSON.parse(token)
-          token = typeof parsed === 'string' ? parsed : token
+          // Si el token es un JSON válido (por ejemplo, '"mi_token"'), lo parseamos
+          // Si es un token normal (ej: 'ey...'), JSON.parse fallará o devolverá algo incorrecto
+          if (token.startsWith('"') && token.endsWith('"')) {
+            token = JSON.parse(token)
+          }
         } catch (e) {
-          // Si no es JSON, usarlo tal como está
-          // token ya tiene el valor correcto
+          // Si no es JSON válido, usamos el valor original
+          console.log('[API] Error parseando token como JSON, usando valor original')
         }
 
         console.log(`[${instanceName}] Interceptor request:`, config.url, 'Token:', token ? 'Presente' : 'No encontrado')

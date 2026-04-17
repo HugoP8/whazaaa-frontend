@@ -150,7 +150,29 @@ const actions = {
       const response = await api.get(`/admin/users/${userId}`)
 
       if (response.data.success) {
-        commit('SET_SELECTED_USER', response.data.data)
+        // El backend devuelve { success, user, statistics, transactions, subscription_history, credits }
+        // Estructuramos los datos para el frontend
+        const userData = {
+          user_info: response.data.user,
+          statistics: response.data.statistics,
+          transactions: response.data.transactions,
+          subscription_history: response.data.subscription_history,
+          // Extraer info de suscripción del usuario
+          subscription: {
+            plan_name: response.data.user?.current_plan,
+            plan_display_name: response.data.user?.plan_display_name,
+            status: response.data.user?.subscription_status,
+            started_at: response.data.user?.subscription_started,
+            expires_at: response.data.user?.subscription_expires
+          },
+          // Créditos del usuario
+          credits: response.data.credits || {
+            total_credits: 0,
+            plan_credits: 0,
+            bonus_credits: 0
+          }
+        }
+        commit('SET_SELECTED_USER', userData)
       }
 
       return response.data
@@ -200,14 +222,17 @@ const actions = {
   },
 
   // Extender suscripción de usuario
+  // NOTA: El backend usa días, no meses, y la ruta es extend-subscription
   async extendSubscription({ commit }, { userId, months, reason }) {
     try {
       commit('SET_LOADING', true)
       commit('CLEAR_ERROR')
 
-      const response = await api.post(`/admin/users/${userId}/subscription/extend`, {
-        months,
-        reason
+      // Convertir meses a días (aproximadamente 30 días por mes)
+      const days = months * 30
+
+      const response = await api.post(`/admin/users/${userId}/extend-subscription`, {
+        days
       })
 
       return response.data
@@ -221,12 +246,13 @@ const actions = {
   },
 
   // Recargar créditos a usuario
+  // NOTA: La ruta correcta es /credits/admin/recharge/:userId
   async rechargeUserCredits({ commit }, { userId, credits, type, amount, payment_method, notes }) {
     try {
       commit('SET_LOADING', true)
       commit('CLEAR_ERROR')
 
-      const response = await api.post(`/admin/credits/recharge/${userId}`, {
+      const response = await api.post(`/credits/admin/recharge/${userId}`, {
         credits,
         type, // 'plan' o 'bonus'
         amount,

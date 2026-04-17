@@ -401,12 +401,13 @@ class WhatsAppService {
     }
   }
 
-  // Enviar mensaje
+  // Enviar mensaje individual
+  // NOTA: La ruta correcta es /campaigns/send-message, no /whatsapp/send-message
   async sendMessage(to, message, options = {}) {
     try {
       console.log('[WhatsApp Service] Enviando mensaje a:', to)
-      const response = await api.post('/whatsapp/send-message', {
-        to,
+      const response = await api.post('/campaigns/send-message', {
+        recipient: to,
         message,
         ...options
       })

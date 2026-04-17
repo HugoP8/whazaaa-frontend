@@ -710,21 +710,49 @@ onMounted(() => {
 
 .bg-warning {
   background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-warning :deep(*) {
+  color: white !important;
 }
 
 .bg-purple {
   background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-purple :deep(*) {
+  color: white !important;
 }
 
 :deep(.v-table thead tr th) {
-  background: #f5f5f5 !important;
+  background: #f8fafc !important;
   font-weight: 600;
   white-space: nowrap;
+  color: #374151 !important;
 }
 
 :deep(.v-table tbody tr:hover) {
-  background: #f8f9fa !important;
+  background: #f1f5f9 !important;
+}
+
+/* Card animations */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Fix for dialogs - nested alert styles */
+:deep(.v-dialog .v-alert__content *) {
+  color: inherit !important;
+}
+
+/* Keep input text colors readable in dialogs */
+:deep(.v-dialog .v-field__input) {
+  color: rgba(0, 0, 0, 0.87) !important;
 }
 </style>

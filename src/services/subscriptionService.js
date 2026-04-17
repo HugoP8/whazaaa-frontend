@@ -20,8 +20,9 @@ export const subscriptionService = {
   },
 
   // Historial de suscripciones
+  // CORREGIDO: La ruta correcta es /my-history, no /history
   async getMyHistory() {
-    const response = await api.get('/subscriptions/history')
+    const response = await api.get('/subscriptions/my-history')
     return response.data
   },
 

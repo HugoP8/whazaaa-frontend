@@ -370,13 +370,14 @@ const actions = {
   },
   
   // Cambiar contraseña
+  // CORREGIDO: La ruta correcta es /password, no /change-password
   async changePassword({ commit }, passwordData) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
       console.log('[Auth Store] Cambiando contraseña')
-      await api.put('/auth/change-password', passwordData)
+      await api.put('/auth/password', passwordData)
       
       toast.success('Contraseña actualizada exitosamente')
     } catch (error) {

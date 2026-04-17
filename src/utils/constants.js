@@ -1,8 +1,8 @@
 // src/utils/constants.js
 
 // URLs de la aplicación
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000'
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3031/api'
+export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3031'
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Whazaaa'
 
 // Estados de campaña (EN MAYÚSCULAS según backend)

@@ -22,8 +22,10 @@ export const authService = {
     return response.data
   },
 
+  // Cambiar contraseña del usuario actual
   async changePassword(data) {
-    await api.put('/auth/password', data)
+    const response = await api.put('/auth/password', data)
+    return response.data
   },
 
   logout() {

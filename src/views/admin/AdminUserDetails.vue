@@ -595,28 +595,76 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.admin-user-details {
+  max-width: 1600px;
+}
+
 .bg-primary {
   background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-primary :deep(.v-icon),
+.bg-primary :deep(.v-card-title) {
+  color: white !important;
 }
 
 .bg-success {
   background: linear-gradient(135deg, #43a047 0%, #388e3c 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-success :deep(.v-icon),
+.bg-success :deep(.v-card-title),
+.bg-success :deep(.v-btn) {
+  color: white !important;
 }
 
 .bg-gradient-credits {
   background: linear-gradient(135deg, #ff6f00 0%, #f57c00 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-gradient-credits :deep(.v-icon),
+.bg-gradient-credits :deep(.v-card-title) {
+  color: white !important;
 }
 
 .bg-gradient-extend {
   background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-gradient-extend :deep(.v-icon),
+.bg-gradient-extend :deep(.v-card-title) {
+  color: white !important;
 }
 
 .bg-gradient-plan {
   background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-gradient-plan :deep(.v-icon),
+.bg-gradient-plan :deep(.v-card-title) {
+  color: white !important;
+}
+
+/* Card hover effects */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Keep dialog inputs readable */
+:deep(.v-dialog .v-field__input) {
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+
+:deep(.v-dialog .v-alert__content) {
+  color: inherit !important;
 }
 </style>

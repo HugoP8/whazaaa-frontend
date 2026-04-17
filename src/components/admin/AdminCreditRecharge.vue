@@ -311,6 +311,24 @@ watch(() => props.modelValue, (newValue) => {
 <style scoped>
 .bg-gradient-admin {
   background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-gradient-admin :deep(*) {
+  color: white !important;
+}
+
+/* Keep dialog inputs readable */
+:deep(.v-field__input) {
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+
+:deep(.v-field__field label) {
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Keep hint text visible */
+:deep(.v-messages__message) {
+  color: rgba(0, 0, 0, 0.6) !important;
 }
 </style>

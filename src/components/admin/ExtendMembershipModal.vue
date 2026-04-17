@@ -266,6 +266,11 @@ watch(() => props.modelValue, (newVal) => {
 <style scoped>
 .bg-primary {
   background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+  color: white !important;
+}
+
+.bg-primary :deep(*) {
+  color: white !important;
 }
 
 .gap-2 {
@@ -273,14 +278,32 @@ watch(() => props.modelValue, (newVal) => {
 }
 
 .text-error {
-  color: #ef5350;
+  color: #ef5350 !important;
 }
 
 .text-warning {
-  color: #ff9800;
+  color: #ff9800 !important;
 }
 
 .text-success {
-  color: #4caf50;
+  color: #4caf50 !important;
+}
+
+/* Keep dialog inputs readable */
+:deep(.v-field__input) {
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+
+:deep(.v-field__field label) {
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Keep hint and chip text readable */
+:deep(.v-messages__message) {
+  color: rgba(0, 0, 0, 0.6) !important;
+}
+
+:deep(.v-alert__content) {
+  color: inherit !important;
 }
 </style>

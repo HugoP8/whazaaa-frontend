@@ -111,8 +111,26 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.admin-plans {
+  max-width: 1600px;
+}
+
 .bg-primary {
   background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-primary :deep(*) {
+  color: white !important;
+}
+
+/* Card animations */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
 }
 </style>

@@ -435,13 +435,51 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.admin-recharge-requests {
+  max-width: 1600px;
+}
+
 .bg-success {
   background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-success :deep(*) {
+  color: white !important;
 }
 
 .bg-error {
   background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
-  color: white;
+  color: white !important;
+}
+
+.bg-error :deep(*) {
+  color: white !important;
+}
+
+/* Card animations */
+:deep(.v-card) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+:deep(.v-card:hover) {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Table improvements */
+:deep(.v-table thead tr th) {
+  background: #f8fafc !important;
+  font-weight: 600;
+  color: #374151 !important;
+}
+
+:deep(.v-table tbody tr:hover) {
+  background: #f1f5f9 !important;
+}
+
+/* Badge inside v-alert should remain visible */
+.bg-success :deep(.v-alert__content *),
+.bg-error :deep(.v-alert__content *) {
+  color: inherit !important;
 }
 </style>
