@@ -1,71 +1,209 @@
 import axios from 'axios'
 import { API_URL } from '@/utils/constants'
-import router from '@/router'
 import { useToast } from 'vue-toastification'
+import router from '@/router'
 
 const toast = useToast()
 
-// Crear instancia de axios
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000,
+// Configuración base para API general
+const baseConfig = {
+  baseURL: API_URL,
+  timeout: 30000, // Aumentado a 30 segundos por defecto
   headers: {
     'Content-Type': 'application/json'
   }
+}
+
+// Instancia principal de API
+const api = axios.create(baseConfig)
+
+// Instancia especializada para operaciones de campaña con timeout extendido
+export const campaignAPI = axios.create({
+  ...baseConfig,
+  timeout: 60000 // 60 segundos para operaciones de campaña
 })
 
-// Interceptor para agregar token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// Interceptor para manejar respuestas
-api.interceptors.response.use(
-  (response) => {
-    return response
-  },
-  (error) => {
-    if (error.response) {
-      // Error del servidor
-      switch (error.response.status) {
-        case 401:
-          // Token expirado o inválido
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
-          router.push('/login')
-          toast.error('Sesión expirada. Por favor inicia sesión nuevamente.')
-          break
-        case 403:
-          toast.error('No tienes permisos para realizar esta acción')
-          break
-        case 404:
-          toast.error('Recurso no encontrado')
-          break
-        case 500:
-          toast.error('Error del servidor. Por favor intenta más tarde.')
-          break
-        default:
-          toast.error(error.response.data.error || 'Error desconocido')
+// Función para configurar interceptores comunes
+const setupInterceptors = (apiInstance, instanceName = 'API') => {
+  apiInstance.interceptors.request.use(
+    config => {
+      // Para rutas de campaigns, aumentar timeout automáticamente
+      if (config.url?.includes('/campaigns') && instanceName === 'API') {
+        config.timeout = 60000; // 60 segundos para operaciones de campañas
+        console.log(`[${instanceName}] Timeout extendido para campaña:`, config.url)
       }
-    } else if (error.request) {
-      // No hubo respuesta del servidor
-      toast.error('No se pudo conectar con el servidor')
-    } else {
-      // Error en la configuración
-      toast.error('Error en la solicitud')
+
+      // Obtener token del localStorage (puede estar como string o JSON)
+      let token = localStorage.getItem('token')
+
+      if (token) {
+        try {
+          // Si el token es un JSON válido (por ejemplo, '"mi_token"'), lo parseamos
+          // Si es un token normal (ej: 'ey...'), JSON.parse fallará o devolverá algo incorrecto
+          if (token.startsWith('"') && token.endsWith('"')) {
+            token = JSON.parse(token)
+          }
+        } catch (e) {
+          // Si no es JSON válido, usamos el valor original
+          console.log('[API] Error parseando token como JSON, usando valor original')
+        }
+
+        console.log(`[${instanceName}] Interceptor request:`, config.url, 'Token:', token ? 'Presente' : 'No encontrado')
+        config.headers.Authorization = `Bearer ${token}`
+      } else {
+        console.log(`[${instanceName}] Interceptor request:`, config.url, 'Sin token')
+      }
+
+      return config
+    },
+    error => {
+      console.error(`[${instanceName}] Error en el interceptor de solicitud:`, error)
+      return Promise.reject(error)
     }
-    
-    return Promise.reject(error)
-  }
-)
+  )
+
+  apiInstance.interceptors.response.use(
+    response => {
+      console.log(`[${instanceName}] Interceptor response:`, response.config.url, 'Estado:', response.status)
+
+      // WORKAROUND: Agregar role si el backend no lo envía
+      if (response.config.url?.includes('/auth/login') && response.data?.user) {
+        console.log('✅ [API] Respuesta de login recibida')
+        console.log('✅ [API] Usuario:', response.data.user)
+        console.log('✅ [API] Role del usuario:', response.data.user.role)
+
+        // Si no hay role, agregarlo basándose en el email
+        if (!response.data.user.role) {
+          console.warn('⚠️ [API] Backend NO envió campo role, agregando automáticamente')
+
+          const email = response.data.user.email || ''
+
+          if (email.includes('superadmin')) {
+            response.data.user.role = 'superadmin'
+          } else if (email.includes('admin')) {
+            response.data.user.role = 'admin'
+          } else {
+            response.data.user.role = 'user'
+          }
+
+          console.log('🔧 [API] Role asignado automáticamente:', response.data.user.role)
+        }
+      }
+
+      return response
+    },
+    error => {
+      console.error(`[${instanceName}] Error en la respuesta:`, error.response?.status, error.response?.data)
+
+      // Manejar timeout específicamente
+      if (error.code === 'ECONNABORTED') {
+        console.warn(`[${instanceName}] Timeout detectado - la operación puede continuar en segundo plano`)
+        // No mostrar toast para timeout en operaciones de campaña ya que son asíncronas
+        if (instanceName !== 'CampaignAPI') {
+          toast.error('La operación está tomando más tiempo del esperado')
+        }
+      }
+
+      // Manejar errores de red
+      if (!error.response) {
+        console.error(`[${instanceName}] Error de red:`, error)
+        if (!error.code || error.code !== 'ECONNABORTED') {
+          toast.error('No se pudo conectar con el servidor. Verifica tu conexión.')
+        }
+        return Promise.reject(error)
+      }
+
+      if (error.response) {
+        const errorData = error.response.data
+        const errorCode = errorData?.code
+
+        switch (error.response.status) {
+          case 401:
+            console.warn('[API] Error 401 - Código:', errorCode)
+
+            // Manejar códigos de error específicos
+            if (errorCode === 'TOKEN_EXPIRED') {
+              console.error('[API] Token expirado - redirigiendo a login')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
+
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.')
+              }
+            } else if (errorCode === 'INVALID_TOKEN' || errorCode === 'NO_TOKEN') {
+              console.error('[API] Token inválido o no presente - redirigiendo a login')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
+
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Sesión inválida. Por favor, inicia sesión.')
+              }
+            } else {
+              // Error 401 genérico
+              console.warn('[API] Token inválido o expirado - limpiando sesión')
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('membership')
+
+              if (router.currentRoute.value.path !== '/auth/login') {
+                router.push('/auth/login')
+                toast.error('Sesión expirada. Por favor, inicia sesión nuevamente.')
+              }
+            }
+            break
+
+          case 403:
+            // Verificar si es un error de límite alcanzado
+            if (errorCode && errorCode.includes('LIMIT_REACHED')) {
+              console.warn(`[${instanceName}] Límite alcanzado:`, errorCode, errorData)
+              // No mostrar toast aquí, será manejado por el componente con el modal
+              error.isLimitError = true
+              error.limitData = errorData
+            } else if (errorCode === 'NO_SUBSCRIPTION') {
+              // Usuario sin suscripción activa
+              console.warn('[API] Usuario sin suscripción activa')
+              router.push('/pricing')
+              toast.error('No tienes una suscripción activa. Por favor, elige un plan.')
+            } else {
+              toast.error('No tienes permisos para realizar esta acción')
+            }
+            break
+
+          case 404:
+            toast.error('Recurso no encontrado')
+            break
+
+          case 422:
+            const validationError = error.response.data?.message || 'Datos de entrada inválidos'
+            toast.error(validationError)
+            break
+
+          case 500:
+            toast.error('Error interno del servidor')
+            break
+
+          default:
+            const errorMessage = error.response.data?.message ||
+                                error.response.data?.error ||
+                                'Error en la solicitud'
+            // Solo mostrar toast para errores no relacionados con timeout
+            if (error.code !== 'ECONNABORTED') {
+              toast.error(errorMessage)
+            }
+        }
+      }
+
+      return Promise.reject(error)
+    }
+  )
+}
+
+// Configurar interceptores para ambas instancias
+setupInterceptors(api, 'API')
+setupInterceptors(campaignAPI, 'CampaignAPI')
 
 export default api

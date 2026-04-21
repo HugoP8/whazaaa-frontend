@@ -8,7 +8,7 @@
       <v-row>
         <v-col cols="12">
           <p class="text-body-2 text-grey">
-            © {{ currentYear }} WhatsApp Mass Sender - 
+            © {{ currentYear }} Whazaaa - 
             Desarrollado con ❤️ usando Vue.js & Node.js
           </p>
         </v-col>

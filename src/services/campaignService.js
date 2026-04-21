@@ -10,6 +10,11 @@ export const campaignService = {
     formData.append('recipients', JSON.stringify(campaignData.recipients))
     formData.append('delay', campaignData.delay)
     
+    // Agregar grupos si existen
+    if (campaignData.groupIds && campaignData.groupIds.length > 0) {
+      formData.append('groupIds', JSON.stringify(campaignData.groupIds))
+    }
+    
     // Agregar archivo si existe
     if (campaignData.media) {
       formData.append('media', campaignData.media)
@@ -24,8 +29,10 @@ export const campaignService = {
     return response.data
   },
 
-  async getCampaigns() {
-    const response = await api.get('/campaigns')
+  async getCampaigns(page = 1, perPage = 20) {
+    const response = await api.get('/campaigns', {
+      params: { page, perPage }
+    })
     return response.data
   },
 
@@ -52,6 +59,33 @@ export const campaignService = {
   async exportCampaignResults(id) {
     const response = await api.get(`/campaigns/${id}/export`, {
       responseType: 'blob'
+    })
+    return response.data
+  },
+
+  async executeCampaign(id) {
+    const response = await api.post(`/campaigns/${id}/execute`)
+    return response.data
+  },
+
+  async pauseCampaign(id) {
+    const response = await api.post(`/campaigns/${id}/pause`)
+    return response.data
+  },
+
+  async resumeCampaign(id) {
+    const response = await api.post(`/campaigns/${id}/resume`)
+    return response.data
+  },
+
+  async cancelCampaign(id) {
+    const response = await api.post(`/campaigns/${id}/cancel`)
+    return response.data
+  },
+
+  async duplicateCampaign(id, newName = null) {
+    const response = await api.post(`/campaigns/${id}/duplicate`, {
+      newName
     })
     return response.data
   }

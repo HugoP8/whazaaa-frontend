@@ -2,6 +2,7 @@ import api from './api'
 
 export const authService = {
   async login(credentials) {
+    console.log('authService.login:', credentials)
     const response = await api.post('/auth/login', credentials)
     return response.data
   },
@@ -21,8 +22,9 @@ export const authService = {
     return response.data
   },
 
+  // Cambiar contraseña del usuario actual
   async changePassword(data) {
-    const response = await api.post('/auth/change-password', data)
+    const response = await api.put('/auth/password', data)
     return response.data
   },
 
