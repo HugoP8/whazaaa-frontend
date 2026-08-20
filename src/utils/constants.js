@@ -8,6 +8,7 @@ export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Whazaaa'
 // Estados de campaña (EN MAYÚSCULAS según backend)
 export const CAMPAIGN_STATUS = {
   PENDING: 'PENDING',
+  SCHEDULED: 'SCHEDULED',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
   PAUSED: 'PAUSED',
@@ -18,6 +19,7 @@ export const CAMPAIGN_STATUS = {
 // Colores para estados de campaña
 export const CAMPAIGN_STATUS_COLORS = {
   PENDING: 'blue',
+  SCHEDULED: 'purple',
   IN_PROGRESS: 'orange',
   COMPLETED: 'green',
   PAUSED: 'yellow',
@@ -28,6 +30,7 @@ export const CAMPAIGN_STATUS_COLORS = {
 // Etiquetas para estados de campaña
 export const CAMPAIGN_STATUS_LABELS = {
   PENDING: 'Pendiente',
+  SCHEDULED: 'Programada',
   IN_PROGRESS: 'En Progreso',
   COMPLETED: 'Completada',
   PAUSED: 'Pausada',

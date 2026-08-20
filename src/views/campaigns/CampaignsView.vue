@@ -56,6 +56,18 @@
       </v-col>
     </v-row>
     
+    <!-- Error al cargar -->
+    <v-row v-if="loadError" class="mt-4">
+      <v-col cols="12">
+        <v-alert type="error" variant="tonal" closable @click:close="loadError = null">
+          {{ loadError }} — la lista puede estar desactualizada.
+          <template v-slot:append>
+            <v-btn size="small" variant="text" @click="loadCampaignsWithFilters()">Reintentar</v-btn>
+          </template>
+        </v-alert>
+      </v-col>
+    </v-row>
+
     <!-- Lista de campañas -->
     <v-row class="mt-4">
       <v-col cols="12">
@@ -64,9 +76,26 @@
             :headers="headers"
             :items="filteredCampaigns"
             :loading="loading"
-            :items-per-page="1000"
+            :items-per-page="pagination.perPage"
+            hide-default-footer
             class="elevation-0"
           >
+            <template v-slot:no-data>
+              <div class="text-center pa-8">
+                <v-icon size="64" color="grey-lighten-2">mdi-email-off-outline</v-icon>
+                <p class="text-h6 mt-4 text-grey">
+                  {{ search || statusFilter ? 'No se encontraron campañas con esos filtros' : 'Aún no tienes campañas' }}
+                </p>
+                <v-btn
+                  v-if="!search && !statusFilter"
+                  color="primary"
+                  class="mt-2"
+                  @click="$router.push('/campaigns/new')"
+                >
+                  Crear primera campaña
+                </v-btn>
+              </div>
+            </template>
             <!-- Estado -->
             <template v-slot:item.status="{ item }">
               <v-chip
@@ -113,6 +142,48 @@
                   >
                     <v-icon start size="small">mdi-stop</v-icon>
                     {{ cancellingCampaigns.includes(item.id) ? 'Cancelando...' : 'Cancelar' }}
+                  </v-btn>
+                </div>
+
+                <!-- Campaña programada, todavía no se envió -->
+                <div v-else-if="item.status === 'SCHEDULED'">
+                  <div class="text-caption mb-1">
+                    <v-icon size="small" color="purple">mdi-calendar-clock</v-icon>
+                    Se enviará: {{ formatDate(item.send_at) }}
+                  </div>
+                  <v-btn
+                    size="x-small"
+                    color="success"
+                    variant="outlined"
+                    class="mr-1 mt-1"
+                    @click="executeCampaignNow(item.id)"
+                    :disabled="executingCampaigns.includes(item.id)"
+                    :loading="executingCampaigns.includes(item.id)"
+                  >
+                    <v-icon start size="small">mdi-send</v-icon>
+                    Enviar ahora
+                  </v-btn>
+                  <v-btn
+                    size="x-small"
+                    color="primary"
+                    variant="outlined"
+                    class="mr-1 mt-1"
+                    @click="openRescheduleDialog(item)"
+                  >
+                    <v-icon start size="small">mdi-calendar-edit</v-icon>
+                    Reprogramar
+                  </v-btn>
+                  <v-btn
+                    size="x-small"
+                    color="warning"
+                    variant="outlined"
+                    class="mt-1"
+                    @click="cancelCampaign(item.id)"
+                    :disabled="cancellingCampaigns.includes(item.id)"
+                    :loading="cancellingCampaigns.includes(item.id)"
+                  >
+                    <v-icon start size="small">mdi-stop</v-icon>
+                    Cancelar
                   </v-btn>
                 </div>
 
@@ -202,10 +273,18 @@
               </v-btn>
             </template>
           </v-data-table>
+          <v-card-actions v-if="pagination.totalPages > 1" class="justify-center pa-4">
+            <v-pagination
+              :model-value="pagination.page"
+              @update:model-value="goToPage"
+              :length="pagination.totalPages"
+              :total-visible="7"
+            ></v-pagination>
+          </v-card-actions>
         </v-card>
       </v-col>
     </v-row>
-    
+
     <!-- Dialog de confirmación -->
     <v-dialog
       v-model="deleteDialog"
@@ -240,8 +319,42 @@
       </v-card>
     </v-dialog>
     
+    <!-- Dialog de reprogramación -->
+    <v-dialog
+      v-model="rescheduleDialog"
+      max-width="400"
+    >
+      <v-card>
+        <v-card-title>
+          <v-icon color="primary" class="mr-2">mdi-calendar-edit</v-icon>
+          Reprogramar campaña
+        </v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="rescheduleDate"
+            type="datetime-local"
+            label="Nueva fecha y hora"
+            :min="minRescheduleDateTime"
+          ></v-text-field>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn text @click="rescheduleDialog = false">Cancelar</v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            :loading="rescheduling"
+            :disabled="!rescheduleDate"
+            @click="submitReschedule"
+          >
+            Guardar
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Modal de reutilización -->
-    <ReuseCampaignModal 
+    <ReuseCampaignModal
       :is-open="showReuseModal"
       :campaign-id="selectedCampaignId"
       @close="closeReuseModal"
@@ -251,7 +364,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
@@ -283,26 +396,28 @@ const deleting = ref(false)
 const showReuseModal = ref(false)
 const selectedCampaignId = ref(null)
 const cancellingCampaigns = ref([]) // Array de IDs de campañas siendo canceladas
+const executingCampaigns = ref([]) // Array de IDs de campañas siendo enviadas manualmente ("Enviar ahora")
 
-// Watch para recargar campañas cuando cambien los filtros
+const rescheduleDialog = ref(false)
+const rescheduleCampaignId = ref(null)
+const rescheduleDate = ref('')
+const rescheduling = ref(false)
+
+const loadError = ref(null)
+
 watch([statusFilter, sortBy], () => {
-  console.log('[CampaignsView] 🔄 Filtros cambiados, recargando campañas...')
-  loadCampaignsWithFilters()
+  loadCampaignsWithFilters(1)
 }, { deep: true })
 
-// Watch para búsqueda con debounce
 let searchTimeout = null
-watch(search, (newValue) => {
+watch(search, () => {
   if (searchTimeout) clearTimeout(searchTimeout)
-
-  searchTimeout = setTimeout(() => {
-    console.log('[CampaignsView] 🔍 Búsqueda cambiada:', newValue)
-    loadCampaignsWithFilters()
-  }, 500) // Esperar 500ms después de que el usuario deje de escribir
+  searchTimeout = setTimeout(() => loadCampaignsWithFilters(1), 500)
 })
 
 const loading = computed(() => store.getters['campaigns/loading'])
 const campaigns = computed(() => store.getters['campaigns/campaigns'])
+const pagination = computed(() => store.getters['campaigns/pagination'])
 
 const headers = [
   { title: 'Nombre', key: 'name', sortable: true },
@@ -324,55 +439,35 @@ const sortOptions = [
   { value: '-name', title: 'Nombre (Z-A)' }
 ]
 
-// Función para cargar campañas con filtros
-const loadCampaignsWithFilters = async () => {
-  const params = {}
+const loadCampaignsWithFilters = async (page) => {
+  const params = { page: page || pagination.value.page || 1 }
 
-  // Agregar filtro de estado si está seleccionado
-  if (statusFilter.value) {
-    params.status = statusFilter.value
-  }
+  if (statusFilter.value) params.status = statusFilter.value
 
-  // Agregar ordenamiento
   if (sortBy.value) {
     const hasMinusPrefix = sortBy.value.startsWith('-')
-    const sortField = sortBy.value.replace('-', '')
-    params.sortBy = sortField
-    // Si tiene '-' → asc (más antigua), si NO tiene '-' → desc (más reciente)
+    params.sortBy = sortBy.value.replace('-', '')
     params.sortOrder = hasMinusPrefix ? 'asc' : 'desc'
   }
 
-  // Agregar búsqueda si existe
-  if (search.value && search.value.trim() !== '') {
-    params.search = search.value.trim()
-  }
-
-  console.log('[CampaignsView] 📤 Enviando parámetros al backend:', params)
-  console.log('[CampaignsView] 🔍 Desglose de parámetros:')
-  console.log('  - status:', params.status || 'TODOS')
-  console.log('  - sortBy:', params.sortBy || 'createdAt')
-  console.log('  - sortOrder:', params.sortOrder || 'desc')
-  console.log('  - search:', params.search || 'N/A')
+  if (search.value?.trim()) params.search = search.value.trim()
 
   try {
     await store.dispatch('campaigns/fetchCampaigns', params)
-    console.log('[CampaignsView] ✅ Campañas cargadas correctamente')
+    loadError.value = null
   } catch (error) {
-    console.error('[CampaignsView] ❌ Error al cargar campañas:', error)
+    console.error('[CampaignsView] Error al cargar campañas:', error)
+    loadError.value = error.response?.data?.message || error.message || 'Error al cargar campañas'
   }
 }
 
-// Computed simplificado - ya no filtra localmente, confía en el backend
+const goToPage = (page) => {
+  loadCampaignsWithFilters(page)
+}
+
 const filteredCampaigns = computed(() => {
-  const filtered = campaigns.value || []
-
-  // Verificar que filtered sea un array
-  if (!Array.isArray(filtered)) {
-    console.warn('[CampaignsView] campaigns.value no es un array:', filtered)
-    return []
-  }
-
-  return filtered
+  const list = campaigns.value
+  return Array.isArray(list) ? list : []
 })
 
 const getStatusColor = (status) => {
@@ -400,22 +495,10 @@ const getProgressPercentage = (campaign) => {
 }
 
 const formatDate = (dateString) => {
-  console.log('🔍 [DEBUG] Fecha recibida:', dateString)
-
-  if (!dateString || dateString === null || dateString === 'null') {
-    console.warn('❌ Fecha inválida:', dateString)
-    return 'Sin fecha'
-  }
-
+  if (!dateString || dateString === 'null') return 'Sin fecha'
   try {
     const date = new Date(dateString)
-
-    // Verificar si la fecha es válida
-    if (isNaN(date.getTime())) {
-      console.warn('❌ Fecha no válida:', dateString)
-      return 'Fecha inválida'
-    }
-
+    if (isNaN(date.getTime())) return 'Fecha inválida'
     return date.toLocaleString('es-ES', {
       year: 'numeric',
       month: '2-digit',
@@ -423,8 +506,7 @@ const formatDate = (dateString) => {
       hour: '2-digit',
       minute: '2-digit'
     })
-  } catch (error) {
-    console.error('❌ Error formateando fecha:', error)
+  } catch {
     return 'Error fecha'
   }
 }
@@ -460,8 +542,7 @@ const closeReuseModal = () => {
 }
 
 const onReuseSuccess = () => {
-  console.log('[CampaignsView] Campaña reutilizada con éxito')
-  // La lista se actualizará automáticamente gracias al store
+  loadCampaignsWithFilters()
 }
 
 const confirmDelete = (campaign) => {
@@ -481,145 +562,99 @@ const deleteCampaign = async () => {
   }
 }
 
-onMounted(async () => {
-  // Cargar campañas con filtros iniciales
-  await loadCampaignsWithFilters()
+// ── Socket ───────────────────────────────────────────────────
+let activeSocket = null
 
-  // DEBUG: Ver qué datos llegan
-  console.log('🔍 [DEBUG] Campañas cargadas:', campaigns.value)
-  if (campaigns.value?.length > 0) {
-    console.log('🔍 [DEBUG] Primera campaña:', campaigns.value[0])
-    console.log('🔍 [DEBUG] Campos de fecha disponibles:', {
-      display_date: campaigns.value[0].display_date,
-      created_at: campaigns.value[0].created_at,
-      scheduled_at: campaigns.value[0].scheduled_at,
-      completed_at: campaigns.value[0].completed_at,
-      duration_seconds: campaigns.value[0].duration_seconds
+const attachSocketListeners = (socket) => {
+  if (!socket || socket === activeSocket) return
+  if (activeSocket) {
+    activeSocket.off('campaign-started')
+    activeSocket.off('campaign-progress')
+    activeSocket.off('campaign-completed')
+    activeSocket.off('campaign-cancelled')
+  }
+  activeSocket = socket
+  setupSocketListeners(socket)
+}
+
+const setupSocketListeners = (socket) => {
+  socket.on('campaign-started', () => {
+    // Nueva campaña iniciada: recargar lista y arrancar polling
+    store.dispatch('campaigns/fetchCampaigns').catch(() => {})
+    startProgressPolling()
+  })
+  socket.on('campaign-progress', (data) => {
+    store.commit('campaigns/UPDATE_CAMPAIGN_PROGRESS', {
+      campaignId: data.campaignId,
+      sentCount: data.sent || data.sentCount || 0,
+      totalCount: data.total || data.totalCount
     })
-  }
+  })
+  socket.on('campaign-completed', (data) => {
+    store.commit('campaigns/UPDATE_CAMPAIGN_COMPLETED', {
+      campaignId: data.campaignId,
+      status: data.status || 'COMPLETED',
+      successCount: data.successCount
+    })
+    toast.success(`Campaña completada: ${data.successCount}/${data.totalCount} enviados`)
+    setTimeout(() => store.dispatch('campaigns/fetchCampaigns').catch(() => {}), 2000)
+  })
+  socket.on('campaign-cancelled', (data) => {
+    store.commit('campaigns/UPDATE_CAMPAIGN_STATUS', { campaignId: data.campaignId, status: 'CANCELLED' })
+    toast.info('Campaña cancelada')
+  })
+}
 
-  // Setup socket listeners for campaign updates
-  const whatsappSocket = store.getters['whatsapp/socket']
-  console.log('[CampaignsView] 🔌 Socket disponible:', !!whatsappSocket)
-  console.log('[CampaignsView] 🔌 Socket conectado:', whatsappSocket?.connected)
+// ── Polling (fuente primaria de progreso — BD se actualiza en tiempo real) ──
+// El backend actualiza sent_count en la BD durante cada envío, así que un
+// poll simple garantiza que la UI muestra el estado real.
+let pollInterval = null
 
-  if (whatsappSocket) {
-    setupSocketListeners(whatsappSocket)
-  } else {
-    console.warn('[CampaignsView] ⚠️ Socket no disponible. Esperando conexión...')
-    // Intentar configurar listeners después de 2 segundos
-    setTimeout(() => {
-      const socket = store.getters['whatsapp/socket']
-      if (socket) {
-        console.log('[CampaignsView] ✅ Socket disponible después de espera')
-        setupSocketListeners(socket)
-      }
-    }, 2000)
-  }
+const startProgressPolling = () => {
+  if (pollInterval) return
+  pollInterval = setInterval(() => {
+    const hasActive = campaigns.value.some(c => c.status === 'IN_PROGRESS')
+    if (!hasActive) {
+      clearInterval(pollInterval)
+      pollInterval = null
+      return
+    }
+    store.dispatch('campaigns/fetchCampaigns').catch(() => {})
+  }, 3000)
+}
+
+// Arrancar polling si hay campañas activas cuando cambia la lista
+watch(campaigns, (list) => {
+  if (list.some(c => c.status === 'IN_PROGRESS')) startProgressPolling()
+}, { deep: false })
+
+onMounted(async () => {
+  await loadCampaignsWithFilters()
+  if (campaigns.value.some(c => c.status === 'IN_PROGRESS')) startProgressPolling()
+})
+
+watchEffect(() => {
+  const socket = store.getters['whatsapp/socket']
+  if (socket) attachSocketListeners(socket)
 })
 
 onUnmounted(() => {
-  // Clean up socket listeners
-  const whatsappSocket = store.getters['whatsapp/socket']
-  if (whatsappSocket) {
-    whatsappSocket.off('campaign-started')
-    whatsappSocket.off('campaign-completed')
-    whatsappSocket.off('campaign-progress')
-    whatsappSocket.off('campaign-cancelled')
+  if (activeSocket) {
+    activeSocket.off('campaign-started')
+    activeSocket.off('campaign-progress')
+    activeSocket.off('campaign-completed')
+    activeSocket.off('campaign-cancelled')
+    activeSocket = null
+  }
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
   }
 })
 
-const setupSocketListeners = (socket) => {
-  console.log('[CampaignsView] 🔌 Configurando listeners de Socket.IO')
-
-  // Handle campaign started (nueva campaña o reenvío)
-  socket.on('campaign-started', (data) => {
-    console.log('[CampaignsView] 🚀 Nueva campaña iniciada:', data)
-    // Refrescar lista para incluir la nueva campaña
-    refreshCampaignsList()
-  })
-
-  // Handle campaign progress updates
-  socket.on('campaign-progress', handleCampaignProgress)
-
-  // Handle campaign completion
-  socket.on('campaign-completed', handleCampaignCompleted)
-
-  // Handle campaign cancellation
-  socket.on('campaign-cancelled', handleCampaignCancelled)
-}
-
-const handleCampaignProgress = (data) => {
-  console.log(`[CampaignsView] 📊 Progreso recibido:`, data)
-  console.log(`[CampaignsView] 🔍 Buscando campaña ID: ${data.campaignId}`)
-
-  // Actualizar campaña en la lista
-  const campaign = campaigns.value.find(c => c.id == data.campaignId)
-
-  if (campaign) {
-    console.log(`[CampaignsView] ✅ Campaña encontrada, actualizando...`)
-
-    // Actualizar campos con datos del socket
-    campaign.sent_count = data.sent || data.sentCount || 0
-    campaign.total_recipients = data.total || data.totalCount || campaign.total_recipients
-    campaign.progress = data.percentage
-    campaign.status = 'IN_PROGRESS'
-
-    console.log(`[CampaignsView] 📈 Progreso actualizado: ${campaign.sent_count}/${campaign.total_recipients} (${data.percentage}%)`)
-
-    // Force reactivity update
-    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
-  } else {
-    console.warn(`[CampaignsView] ⚠️ Campaña ${data.campaignId} no encontrada en la lista. Refrescando...`)
-    // Si la campaña no está en la lista, refrescar
-    refreshCampaignsList()
-  }
-}
-
-const handleCampaignCompleted = (data) => {
-  console.log(`[CampaignsView] Completada: ${data.campaignId}`)
-
-  // Actualizar campaña como completada
-  const campaign = campaigns.value.find(c => c.id == data.campaignId)
-  if (campaign) {
-    campaign.status = 'COMPLETED'
-    campaign.sent_count = data.successCount
-    campaign.completed_at = new Date().toISOString()
-
-    // Force reactivity update
-    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
-  }
-
-  // Show success toast
-  toast.success(`Campaña completada: ${data.successCount}/${data.totalCount} enviados`)
-
-  // Refrescar después de 2 segundos para ver datos finales
-  setTimeout(() => {
-    refreshCampaignsList()
-  }, 2000)
-}
-
-const handleCampaignCancelled = (data) => {
-  console.log(`[CampaignsView] Cancelada: ${data.campaignId}`)
-
-  const campaign = campaigns.value.find(c => c.id == data.campaignId)
-  if (campaign) {
-    campaign.status = 'CANCELLED'
-
-    // Force reactivity update
-    store.commit('campaigns/UPDATE_CAMPAIGN', campaign)
-  }
-
-  toast.info('Campaña cancelada')
-}
-
-// Refrescar lista automáticamente
-const refreshCampaignsList = async () => {
-  try {
-    await store.dispatch('campaigns/fetchCampaigns')
-  } catch (error) {
-    console.error('Error refreshing campaigns:', error)
-  }
+// Refrescar lista
+const refreshCampaignsList = () => {
+  store.dispatch('campaigns/fetchCampaigns').catch(() => {})
 }
 
 // Función para cancelar campaña
@@ -641,6 +676,51 @@ const cancelCampaign = async (campaignId) => {
     toast.error(error.message || 'Error cancelando campaña')
   } finally {
     cancellingCampaigns.value = cancellingCampaigns.value.filter(id => id !== campaignId)
+  }
+}
+
+const executeCampaignNow = async (campaignId) => {
+  executingCampaigns.value.push(campaignId)
+  try {
+    await store.dispatch('whatsapp/executeCampaign', campaignId)
+    refreshCampaignsList()
+  } catch (error) {
+    console.error('Error enviando campaña programada:', error)
+    toast.error(error.message || 'Error al enviar la campaña')
+  } finally {
+    executingCampaigns.value = executingCampaigns.value.filter(id => id !== campaignId)
+  }
+}
+
+// datetime-local trabaja en hora LOCAL del navegador
+const toLocalDateTimeInputValue = (date) => {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const minRescheduleDateTime = computed(() => toLocalDateTimeInputValue(new Date(Date.now() + 60000)))
+
+const openRescheduleDialog = (item) => {
+  rescheduleCampaignId.value = item.id
+  rescheduleDate.value = item.send_at ? toLocalDateTimeInputValue(new Date(item.send_at)) : ''
+  rescheduleDialog.value = true
+}
+
+const submitReschedule = async () => {
+  if (!rescheduleDate.value) return
+  rescheduling.value = true
+  try {
+    // Convertir de hora local del navegador a ISO/UTC — el backend interpreta
+    // la fecha en SU propio huso horario si no viene con offset.
+    const sendAtISO = new Date(rescheduleDate.value).toISOString()
+    await store.dispatch('whatsapp/rescheduleCampaign', { campaignId: rescheduleCampaignId.value, sendAt: sendAtISO })
+    rescheduleDialog.value = false
+    refreshCampaignsList()
+  } catch (error) {
+    console.error('Error reprogramando campaña:', error)
+    toast.error(error.message || 'Error al reprogramar campaña')
+  } finally {
+    rescheduling.value = false
   }
 }
 </script>

@@ -14,7 +14,10 @@ const state = {
   usageReport: null,
   adsReport: null,
   plans: [],
-  loading: false,
+  // Contador de requests en curso, no booleano: si dos acciones corren en paralelo
+  // (ej. fetchUserDetails + otra carga en la misma vista), la que termina primero
+  // no debe apagar el loading mientras la otra sigue pendiente.
+  loading: 0,
   error: null
 }
 
@@ -27,7 +30,7 @@ const getters = {
   usageReport: (state) => state.usageReport,
   adsReport: (state) => state.adsReport,
   plans: (state) => state.plans,
-  loading: (state) => state.loading,
+  loading: (state) => state.loading > 0,
   error: (state) => state.error
 }
 
@@ -56,8 +59,8 @@ const mutations = {
   SET_PLANS(state, plans) {
     state.plans = plans
   },
-  SET_LOADING(state, loading) {
-    state.loading = loading
+  SET_LOADING(state, isLoading) {
+    state.loading = Math.max(0, state.loading + (isLoading ? 1 : -1))
   },
   SET_ERROR(state, error) {
     state.error = error

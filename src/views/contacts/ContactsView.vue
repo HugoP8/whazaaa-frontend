@@ -37,6 +37,9 @@
               :items="contacts"
               :search="search"
               :items-per-page="10"
+              :loading="loading"
+              loading-text="Cargando contactos..."
+              no-data-text="No hay contactos. Presiona Sincronizar para traerlos de WhatsApp."
             >
               <template v-slot:item.avatar="{ item }">
                 <v-avatar size="40">
@@ -66,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 
@@ -75,8 +78,20 @@ const router = useRouter()
 
 const search = ref('')
 const syncing = ref(false)
+const loading = ref(false)
 
 const contacts = computed(() => store.getters['whatsapp/contacts'])
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    await store.dispatch('whatsapp/fetchContacts')
+  } catch (error) {
+    console.error('Error cargando contactos:', error)
+  } finally {
+    loading.value = false
+  }
+})
 
 const headers = [
   { title: '', key: 'avatar', sortable: false },

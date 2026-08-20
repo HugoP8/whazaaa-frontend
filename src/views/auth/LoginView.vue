@@ -1,246 +1,190 @@
 <template>
-  <div class="login-container fade-in-up">
-    <v-card
-      class="login-card shadow-2xl"
-      max-width="420"
-    >
-      <!-- Header with Modern Design -->
-      <div class="login-header">
-        <div class="icon-container hover-scale">
-          <v-icon
-            size="64"
-            color="white"
-            class="login-icon"
-          >
-            mdi-whatsapp
-          </v-icon>
+  <div class="login-wrap">
+
+    <!-- ═══════ CARD ═══════ -->
+    <div class="login-card">
+
+      <!-- Encabezado -->
+      <div class="lh">
+        <div class="lh-icon"><v-icon size="22" color="white">mdi-whatsapp</v-icon></div>
+        <div class="lh-titles">
+          <span class="lh-brand">Whazaaa</span>
+          <span class="lh-sub">Inicia sesión en tu cuenta</span>
         </div>
-
-        <h1 class="login-title text-gradient">
-          Whazaaa
-        </h1>
-
-        <p class="login-subtitle">
-          Plataforma moderna de WhatsApp Business
-        </p>
-
-        <div class="header-decoration"></div>
       </div>
 
-      <!-- Form Section -->
-      <v-card-text class="login-form">
-        <v-form ref="form" @submit.prevent="handleLogin" class="form-content">
-          <div class="input-group slide-in-left">
-            <v-text-field
-              v-model="email"
-              label="Correo Electrónico"
-              type="email"
-              prepend-inner-icon="mdi-email-outline"
-              variant="outlined"
-              color="primary"
-              required
-              class="modern-input"
-              density="comfortable"
-              hide-details="auto"
-              :rules="[rules.required, rules.email]"
-            ></v-text-field>
-          </div>
+      <!-- Formulario -->
+      <div class="lf">
 
-          <div class="input-group slide-in-right">
-            <v-text-field
-              v-model="password"
-              label="Contraseña"
-              :type="showPassword ? 'text' : 'password'"
-              prepend-inner-icon="mdi-lock-outline"
-              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-              @click:append-inner="showPassword = !showPassword"
-              variant="outlined"
-              color="primary"
-              required
-              class="modern-input"
-              density="comfortable"
-              hide-details="auto"
-              :rules="[rules.required]"
-            ></v-text-field>
-          </div>
-
-          <div class="form-options slide-in-left">
-            <v-checkbox
-              v-model="rememberMe"
-              label="Recordarme"
-              color="primary"
-              density="compact"
-              hide-details
-              class="remember-checkbox"
-            ></v-checkbox>
-          </div>
-
-          <div class="login-button-container slide-in-up">
-            <v-btn
-              color="primary"
-              block
-              size="large"
-              :loading="loading"
-              type="submit"
-              class="login-btn hover-lift"
-              variant="elevated"
-              rounded="lg"
-            >
-              <v-icon start>mdi-login</v-icon>
-              {{ loading ? 'Iniciando sesión...' : 'Iniciar Sesión' }}
-            </v-btn>
-          </div>
-
-          <!-- Alert Messages -->
-          <transition name="scale-fade">
-            <v-alert
-              v-if="error"
-              type="error"
-              variant="tonal"
-              class="modern-alert error-alert"
-              rounded="lg"
-              closable
-              @click:close="error = null"
-            >
-              <template v-slot:prepend>
-                <v-icon>mdi-alert-circle</v-icon>
-              </template>
-              {{ error }}
-            </v-alert>
-          </transition>
-
-          <transition name="scale-fade">
-            <v-alert
-              v-if="showSuccess"
-              type="success"
-              variant="tonal"
-              class="modern-alert success-alert"
-              rounded="lg"
-            >
-              <template v-slot:prepend>
-                <v-icon>mdi-check-circle</v-icon>
-              </template>
-              ¡Inicio de sesión exitoso! Redirigiendo...
-            </v-alert>
-          </transition>
-        </v-form>
-      </v-card-text>
-
-      <!-- Footer -->
-      <v-card-actions class="login-footer">
-        <div class="footer-content">
-          <div class="divider-container">
-            <v-divider></v-divider>
-            <span class="divider-text">O</span>
-            <v-divider></v-divider>
-          </div>
-
-          <v-btn
-            variant="text"
-            color="primary"
-            @click="$router.push('/register')"
-            class="register-btn hover-scale"
-            rounded="lg"
-          >
-            <v-icon start>mdi-account-plus</v-icon>
-            ¿No tienes cuenta? Regístrate
-          </v-btn>
-
-          <div class="footer-links">
-            <v-btn
-              variant="text"
-              size="small"
-              color="grey"
-              class="footer-link"
-            >
-              Términos de Servicio
-            </v-btn>
-            <v-btn
-              variant="text"
-              size="small"
-              color="grey"
-              class="footer-link"
-            >
-              Privacidad
-            </v-btn>
+        <!-- Identificador -->
+        <div class="fg">
+          <p class="fl">Email o número de celular</p>
+          <div class="fi" :class="{ 'fi-active': fId, 'fi-filled': identifier }">
+            <v-icon size="17" class="fi-ico" :color="fId ? '#22c55e' : '#9ca3af'">
+              {{ looksLikePhone ? 'mdi-phone' : 'mdi-email' }}
+            </v-icon>
+            <input
+              ref="idRef"
+              v-model="identifier"
+              type="text"
+              placeholder="tu@correo.com o +52 331..."
+              class="fi-input"
+              autocomplete="username"
+              @focus="fId = true"
+              @blur="fId = false"
+              @keydown.enter="$refs.pwdRef.focus()"
+            />
+            <span v-if="identifier" class="fi-badge">{{ looksLikePhone ? 'Celular' : 'Email' }}</span>
           </div>
         </div>
-      </v-card-actions>
-    </v-card>
 
-    <!-- Background Elements -->
-    <div class="login-bg-elements">
-      <div class="bg-circle bg-circle-1"></div>
-      <div class="bg-circle bg-circle-2"></div>
-      <div class="bg-circle bg-circle-3"></div>
+        <!-- Contraseña -->
+        <div class="fg">
+          <p class="fl">Contraseña</p>
+          <div class="fi" :class="{ 'fi-active': fPwd, 'fi-filled': pwd }">
+            <v-icon size="17" class="fi-ico" :color="fPwd ? '#22c55e' : '#9ca3af'">mdi-lock</v-icon>
+            <input
+              ref="pwdRef"
+              v-model="pwd"
+              :type="showPwd ? 'text' : 'password'"
+              placeholder="••••••••"
+              class="fi-input"
+              autocomplete="current-password"
+              @focus="fPwd = true"
+              @blur="fPwd = false"
+              @keydown.enter="doLogin"
+            />
+            <span class="fi-eye" @click="showPwd = !showPwd">
+              <v-icon size="17" color="#9ca3af">{{ showPwd ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
+            </span>
+          </div>
+        </div>
+
+        <!-- Alerta error -->
+        <Transition name="err">
+          <div v-if="errorMsg" class="lerr">
+            <v-icon size="15" color="#ef4444">mdi-alert-circle</v-icon>
+            {{ errorMsg }}
+          </div>
+        </Transition>
+
+        <!-- Botón -->
+        <div
+          class="lbtn"
+          :class="{ 'lbtn-loading': loading, 'lbtn-disabled': !canLogin }"
+          @click="doLogin"
+        >
+          <template v-if="!loading">
+            <v-icon size="18" color="white">mdi-login-variant</v-icon>
+            <span>Iniciar Sesión</span>
+          </template>
+          <template v-else>
+            <v-progress-circular indeterminate size="18" width="2" color="white" />
+            <span>Verificando...</span>
+          </template>
+        </div>
+
+      </div>
+
+      <!-- Footer card -->
+      <div class="lcard-footer">
+        <div class="ldiv"><span>o</span></div>
+        <div
+          class="lbtn-sec"
+          @click="$router.push('/register')"
+        >
+          <v-icon size="16">mdi-account-plus</v-icon>
+          <span>Crear cuenta nueva · es gratis</span>
+        </div>
+        <a :href="waLink" target="_blank" class="ldemo">
+          <v-icon size="14" color="#22c55e">mdi-gift</v-icon>
+          Solicitar 3 créditos demo gratis
+        </a>
+      </div>
+
     </div>
+
+    <!-- ═══════ BOTÓN MANUAL ═══════ -->
+    <div class="manual-btn" @click="$emit('open-manual')">
+      <div class="mb-icon">
+        <v-icon size="22" color="#22c55e">mdi-book-open-page-variant</v-icon>
+      </div>
+      <div class="mb-body">
+        <span class="mb-title">Ver manual completo</span>
+        <span class="mb-desc">Guía paso a paso, planes y preguntas frecuentes</span>
+      </div>
+      <v-icon size="18" color="#d1d5db">mdi-chevron-right</v-icon>
+    </div>
+
+    <!-- Overlay éxito -->
+    <Transition name="pop">
+      <div v-if="showOk" class="ok-overlay">
+        <div class="ok-box">
+          <div class="ok-circle"><v-icon size="36" color="white">mdi-check-bold</v-icon></div>
+          <p class="ok-title">¡Bienvenido!</p>
+          <p class="ok-sub">Cargando el dashboard...</p>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useStore } from 'vuex'
-import axios from 'axios'
-import { useToast } from 'vue-toastification'
+import { useStore }  from 'vuex'
+import { useToast }  from 'vue-toastification'
 
-const toast = useToast()
+defineEmits(['open-manual'])
+
 const router = useRouter()
-const store = useStore()
+const store  = useStore()
+const toast  = useToast()
 
-const email = ref('')
-const password = ref('')
-const showPassword = ref(false)
-const rememberMe = ref(false)
-const loading = ref(false)
-const showSuccess = ref(false)
-const error = ref(null)
+const identifier = ref('')
+const pwd        = ref('')
+const showPwd    = ref(false)
+const fId        = ref(false)
+const fPwd       = ref(false)
+const loading    = ref(false)
+const errorMsg   = ref('')
+const showOk     = ref(false)
 
-// Form validation rules
-const rules = reactive({
-  required: value => !!value || 'Este campo es requerido',
-  email: value => {
-    const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return pattern.test(value) || 'Email inválido'
-  }
+const idRef  = ref(null)
+const pwdRef = ref(null)
+
+const SALES_WA = import.meta.env.VITE_SALES_WA || '5491112345678'
+const waLink = computed(() => {
+  const m = encodeURIComponent('Hola, quiero una cuenta demo de Whazaaa con 3 créditos gratuitos 🎁')
+  return `https://wa.me/${SALES_WA}?text=${m}`
 })
 
-const handleLogin = async () => {
-  console.log('handleLogin iniciado - email:', email.value)
-  if (!email.value || !password.value) {
-    error.value = 'Por favor, completa todos los campos'
-    return
-  }
+const looksLikePhone = computed(() => {
+  const v = identifier.value.replace(/[\s\+\-\(\)]/g, '')
+  return /^\d{7,}$/.test(v) && !identifier.value.includes('@')
+})
 
+const canLogin = computed(() => identifier.value.trim() && pwd.value.trim())
+
+const doLogin = async () => {
+  if (!canLogin.value || loading.value) return
   loading.value = true
-  error.value = null
-  showSuccess.value = false
+  errorMsg.value = ''
 
   try {
-    const loginData = {
-      email: email.value,
-      password: password.value
-    }
-    
-    console.log('Iniciando login via Vuex Action...')
-    // Usar la acción de login de Vuex que ya maneja token, localStorage y redirección
-    await store.dispatch('auth/login', loginData)
-    
-    showSuccess.value = true
-    console.log('Login exitoso reportado por Vuex')
-    
-    // La redirección a /dashboard ya la maneja la acción de login en store/modules/auth.js
-    // Pero si queremos asegurar que suceda aquí después del mensaje de éxito:
+    await store.dispatch('auth/login', {
+      identifier: identifier.value.trim(),
+      email:      identifier.value.trim(),
+      password:   pwd.value,
+    })
+    showOk.value = true
     setTimeout(() => {
-      if (router.currentRoute.value.path !== '/dashboard') {
-        router.push('/dashboard')
-      }
-    }, 1500)
-
-  } catch (err) {
-    console.error('Error en handleLogin:', err)
-    error.value = err.response?.data?.message || err.message || 'Error al iniciar sesión'
-    toast.error(error.value)
+      if (router.currentRoute.value.path !== '/dashboard') router.push('/dashboard')
+    }, 1200)
+  } catch (e) {
+    errorMsg.value = e.response?.data?.error || e.response?.data?.message || e.message || 'Credenciales incorrectas'
+    toast.error(errorMsg.value)
   } finally {
     loading.value = false
   }
@@ -248,330 +192,277 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-.login-container {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  position: relative;
-  overflow: hidden;
+/* ── reset global para botones ── */
+* { box-sizing: border-box; }
+button, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none !important;
+  border: none;
+  cursor: pointer;
+  user-select: none;
 }
 
-.login-card {
-  backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-2xl);
-  overflow: hidden;
-  position: relative;
-  z-index: 10;
-  margin: var(--space-4);
-}
-
-/* Header Styles */
-.login-header {
-  background: var(--primary-gradient);
-  padding: var(--space-8) var(--space-6) var(--space-6);
-  text-align: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.login-header::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  transform: rotate(45deg);
-  animation: shimmer 3s infinite;
-}
-
-.icon-container {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 96px;
-  height: 96px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  margin-bottom: var(--space-4);
-  backdrop-filter: blur(10px);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  position: relative;
-}
-
-.login-icon {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-}
-
-.login-title {
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: white;
-  margin: var(--space-2) 0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  letter-spacing: -0.02em;
-}
-
-.login-subtitle {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: var(--text-lg);
-  font-weight: 500;
-  margin-bottom: var(--space-4);
-}
-
-.header-decoration {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-}
-
-/* Form Styles */
-.login-form {
-  padding: var(--space-8) var(--space-6) var(--space-6);
-}
-
-.form-content {
+.login-wrap {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 14px;
+  width: 100%;
 }
 
-.input-group {
-  position: relative;
-}
-
-.modern-input {
-  transition: all var(--duration-300) var(--ease-out);
-}
-
-.modern-input :deep(.v-field) {
-  border-radius: var(--radius-lg);
-  transition: all var(--duration-200) var(--ease-out);
-}
-
-.modern-input :deep(.v-field:hover) {
-  box-shadow: var(--shadow-sm);
-}
-
-.modern-input :deep(.v-field--focused) {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-.form-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.remember-checkbox {
-  font-weight: 500;
-  color: var(--neutral-700);
-}
-
-.login-button-container {
-  margin-top: var(--space-4);
-}
-
-.login-btn {
-  height: 56px;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: none;
-  transition: all var(--duration-200) var(--ease-out);
-  background: var(--primary-gradient);
-  position: relative;
+/* ── CARD ── */
+.login-card {
+  background: #fff;
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.05),
+    0 2px 4px rgba(0,0,0,0.04),
+    0 8px 24px rgba(0,0,0,0.08);
   overflow: hidden;
 }
 
-.login-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left var(--duration-500) var(--ease-out);
-}
-
-.login-btn:hover::before {
-  left: 100%;
-}
-
-/* Alert Styles */
-.modern-alert {
-  margin-top: var(--space-4);
-  border: none;
-  font-weight: 500;
-}
-
-.error-alert {
-  background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
-  border-left: 4px solid #EF4444;
-}
-
-.success-alert {
-  background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
-  border-left: 4px solid #10B981;
-}
-
-/* Footer Styles */
-.login-footer {
-  padding: var(--space-4) var(--space-6) var(--space-6);
-  background: var(--neutral-50);
-}
-
-.footer-content {
-  width: 100%;
-  text-align: center;
-}
-
-.divider-container {
+/* encabezado */
+.lh {
   display: flex;
   align-items: center;
-  margin: var(--space-4) 0;
-  gap: var(--space-4);
+  gap: 14px;
+  padding: 24px 28px 20px;
+  background: linear-gradient(135deg, #16a34a 0%, #0f766e 100%);
 }
-
-.divider-text {
-  color: var(--neutral-400);
-  font-weight: 500;
-  font-size: var(--text-sm);
-  white-space: nowrap;
+.lh-icon {
+  width: 42px; height: 42px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
+.lh-titles { display: flex; flex-direction: column; gap: 2px; }
+.lh-brand { font-size: 1.15rem; font-weight: 800; color: #fff; line-height: 1; }
+.lh-sub   { font-size: 0.78rem; color: rgba(255,255,255,0.75); }
 
-.register-btn {
-  margin: var(--space-2) 0;
-  font-weight: 600;
-  text-transform: none;
-}
-
-.footer-links {
+/* formulario */
+.lf {
+  padding: 24px 28px 20px;
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* field group */
+.fg { display: flex; flex-direction: column; gap: 6px; }
+
+.fl {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+}
+
+.fi {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  padding: 0 14px;
+  height: 48px;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.fi-active {
+  border-color: #22c55e;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.12);
+}
+.fi-filled { background: #fff; border-color: #d1d5db; }
+
+.fi-ico { flex-shrink: 0; transition: color 0.18s; }
+
+.fi-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.92rem;
+  color: #111827;
+  font-family: inherit;
+  min-width: 0;
+}
+.fi-input::placeholder { color: #d1d5db; }
+
+.fi-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #16a34a;
+  background: rgba(34,197,94,0.1);
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fi-eye {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.fi-eye:hover { background: #f3f4f6; }
+
+/* error */
+.lerr {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: #b91c1c;
+  font-weight: 500;
+}
+.err-enter-active, .err-leave-active { transition: all .22s; }
+.err-enter-from, .err-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* botón principal */
+.lbtn {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
+  gap: 8px;
+  height: 50px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #22c55e 0%, #0f766e 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(34,197,94,0.35);
+  transition: box-shadow 0.18s, transform 0.18s, opacity 0.18s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.lbtn:hover { box-shadow: 0 8px 24px rgba(34,197,94,0.45); transform: translateY(-1px); }
+.lbtn:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(34,197,94,0.3); }
+.lbtn-disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+.lbtn-loading { opacity: 0.8; cursor: wait; }
+
+/* footer de la card */
+.lcard-footer {
+  padding: 0 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.footer-link {
-  font-size: var(--text-xs);
-  text-transform: none;
+.ldiv {
+  display: flex; align-items: center;
+  width: 100%; gap: 12px;
+  color: #e5e7eb; font-size: 0.78rem;
 }
-
-/* Background Elements */
-.login-bg-elements {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  z-index: 1;
+.ldiv::before, .ldiv::after {
+  content: ''; flex: 1; height: 1px; background: #f3f4f6;
 }
+.ldiv span { color: #9ca3af; }
 
-.bg-circle {
-  position: absolute;
+.lbtn-sec {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 44px;
+  border-radius: 11px;
+  border: 1.5px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.lbtn-sec:hover { border-color: #22c55e; color: #16a34a; background: #f0fdf4; }
+.lbtn-sec:active { background: #dcfce7; }
+
+.ldemo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #16a34a;
+  text-decoration: none;
+}
+.ldemo:hover { text-decoration: underline; }
+
+/* ── BOTÓN MANUAL ── */
+.manual-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  background: #fff;
+  border-radius: 18px;
+  border: 1.5px solid #e5e7eb;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+.manual-btn:hover {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(34,197,94,0.12);
+}
+.manual-btn:active { transform: translateY(0); }
+
+.mb-icon {
+  width: 44px; height: 44px;
+  background: rgba(34,197,94,0.1);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.mb-body { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+.mb-title { font-size: 0.92rem; font-weight: 700; color: #111827; }
+.mb-desc  { font-size: 0.75rem; color: #6b7280; }
+
+/* ── OVERLAY OK ── */
+.ok-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px);
+}
+.ok-box {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 12px;
+  text-align: center;
+}
+.ok-circle {
+  width: 80px; height: 80px;
+  background: linear-gradient(135deg, #22c55e, #0f766e);
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(37, 211, 102, 0.1), rgba(18, 140, 126, 0.1));
-  animation: float 6s ease-in-out infinite;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 12px 40px rgba(34,197,94,0.5);
+  animation: pop .4s cubic-bezier(.175,.885,.32,1.275);
 }
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.ok-title { font-size: 1.5rem; font-weight: 800; color: #fff; }
+.ok-sub   { font-size: 0.9rem; color: rgba(255,255,255,0.65); }
 
-.bg-circle-1 {
-  width: 200px;
-  height: 200px;
-  top: 10%;
-  left: 10%;
-  animation-delay: 0s;
-}
-
-.bg-circle-2 {
-  width: 150px;
-  height: 150px;
-  top: 60%;
-  right: 15%;
-  animation-delay: 2s;
-}
-
-.bg-circle-3 {
-  width: 100px;
-  height: 100px;
-  bottom: 20%;
-  left: 20%;
-  animation-delay: 4s;
-}
-
-/* Animation Delays for Staggered Effects */
-.slide-in-left {
-  animation-delay: 0.1s;
-}
-
-.slide-in-right {
-  animation-delay: 0.2s;
-}
-
-.slide-in-up {
-  animation-delay: 0.3s;
-}
-
-/* Responsive Design */
-@media (max-width: 640px) {
-  .login-container {
-    padding: var(--space-2);
-  }
-
-  .login-card {
-    margin: var(--space-2);
-    max-width: none;
-  }
-
-  .login-header {
-    padding: var(--space-6) var(--space-4) var(--space-4);
-  }
-
-  .login-title {
-    font-size: 2rem;
-  }
-
-  .login-subtitle {
-    font-size: var(--text-base);
-  }
-
-  .login-form {
-    padding: var(--space-6) var(--space-4) var(--space-4);
-  }
-
-  .footer-links {
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .bg-circle {
-    display: none;
-  }
-}
-
-/* Focus States */
-.login-btn:focus-visible {
-  outline: 2px solid rgba(37, 211, 102, 0.5);
-  outline-offset: 2px;
-}
-
-/* Loading State */
-.login-btn.v-btn--loading {
-  pointer-events: none;
-}
-
-.login-btn.v-btn--loading::before {
-  display: none;
-}
+.pop-enter-active { transition: opacity .3s; }
+.pop-leave-active { transition: opacity .3s; }
+.pop-enter-from, .pop-leave-to { opacity: 0; }
 </style>

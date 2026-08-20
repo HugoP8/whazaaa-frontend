@@ -126,7 +126,8 @@ const routes = [
       {
         path: 'debug-admin',
         name: 'DebugAdmin',
-        component: AdminDebug
+        component: AdminDebug,
+        meta: { requiresAuth: true, requiresAdmin: true }
       }
     ]
   },

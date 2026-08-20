@@ -31,55 +31,25 @@ function _notifyError(msg) {
   toast.error(msg, { timeout: 4000 })
 }
 
-// Socket event handlers
-const createSocketEventHandlers = (commit, userId, cleanup) => {
-  const handlers = {
-    qr: (data) => {
-      console.log(`[WhatsApp Store] Evento QR recibido para userId: ${userId}`, data)
-      const qrCodeData = typeof data === 'string' ? data : data?.qrCode
-      
-      if (qrCodeData) {
-        commit('SET_QR_CODE', qrCodeData)
-        console.log('[WhatsApp Store] QR Code establecido en el estado')
-      } else {
-        console.error('[WhatsApp Store] QR Code no válido recibido:', data)
-      }
-    },
-    
-    connectionStatus: (status) => {
-      console.log(`[WhatsApp Store] Evento connection-status para userId: ${userId}`, status)
-      commit('SET_CONNECTION_INFO', status)
-
-      if (status.connected) {
-        commit('SET_CONNECTED', true)
-        commit('SET_QR_CODE', null)
-        _notifyConnected()
-      } else if (status.qr) {
-        commit('SET_QR_CODE', status.qr)
-      }
-    },
-
-    error: (error) => {
-      console.error(`[WhatsApp Store] Error en socket para userId ${userId}:`, error)
-      commit('SET_CONNECTION_ERROR', error.message || 'Error de conexión')
-      _notifyError(error.message || 'Error en la conexión de WhatsApp')
-    }
-  }
-  
-  // Return cleanup function
-  return (socket) => {
-    if (!socket) return
-    
-    // Remove all event listeners
-    Object.entries(handlers).forEach(([event, handler]) => {
-      socket.off(`${event}-${userId}`, handler)
-    })
-    
-    // Additional cleanup if needed
-    if (cleanup) {
-      cleanup()
-    }
-  }
+// Watchdog de seguridad para el estado "conectando": si pasa este tiempo sin
+// ningún evento del backend (socket caído, evento perdido, etc.), dejamos de
+// esperar y mostramos el mismo mensaje de reconexión manual que emitiría el
+// backend. Antes eran 15min — demasiado tiempo mirando un spinner sin
+// feedback; el usuario tiene además un botón de "Forzar QR" disponible desde
+// el inicio para no tener que esperar nada de esto.
+const CONNECTING_WATCHDOG_MS = 45 * 1000
+const GIVE_UP_ERROR_MSG = 'Se cerró la conexión con WhatsApp Web. Esto es normal — vuelve a conectar y escanea el código QR.'
+let _connectingWatchdogTimer = null
+function _armConnectingWatchdog(commit) {
+  _clearConnectingWatchdog()
+  _connectingWatchdogTimer = setTimeout(() => {
+    console.warn('[WhatsApp Store] Watchdog: sin novedades tras 15min conectando — ofreciendo reconexión manual')
+    commit('SET_CONNECTING', false)
+    commit('SET_CONNECTION_ERROR', GIVE_UP_ERROR_MSG)
+  }, CONNECTING_WATCHDOG_MS)
+}
+function _clearConnectingWatchdog() {
+  if (_connectingWatchdogTimer) { clearTimeout(_connectingWatchdogTimer); _connectingWatchdogTimer = null }
 }
 
 const state = {
@@ -91,10 +61,17 @@ const state = {
   socket: null,
   connectionInfo: null,
   connectionError: null,
-  cleanupSocket: null, // Store cleanup function
-  campaignProgress: null, // Para tracking de progreso en tiempo real
-  todayMessagesCount: 0, // Contador de mensajes enviados hoy
-  monthlyLimit: 300 // Límite mensual de mensajes
+  cleanupSocket: null,
+  campaignProgress: null,
+  todayMessagesCount: 0,
+  monthlyLimit: 300,
+  boundPhoneNumber: null,    // Número vinculado a la cuenta
+  phoneConflict: null,
+  phoneMismatch: null,       // { boundPhone, attemptedPhone } — número incorrecto escaneado
+  accounts: [],
+  activeAccountId: null,
+  canAddAccount: false,
+  maxAccounts: 1
 }
 
 const mutations = {
@@ -194,22 +171,71 @@ const mutations = {
   SET_MONTHLY_LIMIT(state, limit) {
     console.log('[WhatsApp Store] SET_MONTHLY_LIMIT:', limit)
     state.monthlyLimit = limit
+  },
+
+  SET_BOUND_PHONE(state, phone) {
+    state.boundPhoneNumber = phone
+  },
+
+  SET_PHONE_CONFLICT(state, conflict) {
+    state.phoneConflict = conflict
+  },
+
+  SET_PHONE_MISMATCH(state, mismatch) {
+    state.phoneMismatch = mismatch
+    if (mismatch) {
+      // Si hay mismatch, la conexión fue rechazada → limpiar estado de conectando
+      state.connected = false
+      state.connecting = false
+      state.qrCode = null
+    }
+  },
+
+  CLEAR_PHONE_MISMATCH(state) {
+    state.phoneMismatch = null
+  },
+
+  CLEAR_CONNECTION_ERROR(state) {
+    state.connectionError = null
+  },
+
+  SET_ACCOUNTS(state, accounts) {
+    state.accounts = accounts
+  },
+
+  SET_ACTIVE_ACCOUNT_ID(state, accountId) {
+    state.activeAccountId = accountId
+  },
+
+  SET_CAN_ADD_ACCOUNT(state, { canAdd, current, maxAllowed }) {
+    state.canAddAccount = canAdd
+    state.maxAccounts = maxAllowed
+  },
+
+  UPDATE_ACCOUNT_STATUS(state, { accountId, status, connected, phoneNumber }) {
+    const acc = state.accounts.find(a => String(a.id) === String(accountId))
+    if (acc) {
+      acc.status = status
+      acc.is_connected = connected
+      if (phoneNumber) acc.phone_number = phoneNumber
+    }
   }
 }
 
 const actions = {
-  async connect({ commit, dispatch, rootState, state }) {
-    console.log('[WhatsApp Store] Ejecutando acción connect')
-    
-    if (state.connecting) {
+  async connect({ commit, dispatch, rootState, state }, { force = false } = {}) {
+    console.log('[WhatsApp Store] Ejecutando acción connect', { force })
+
+    if (state.connecting && !force) {
       console.log('[WhatsApp Store] Ya se está conectando, ignorando nueva solicitud')
       return
     }
-    
+
     commit('SET_CONNECTING', true)
     commit('SET_CONNECTION_ERROR', null)
     commit('SET_QR_CODE', null)
-    
+    _armConnectingWatchdog(commit)
+
     try {
       const userId = rootState.auth.user?.id
       if (!userId) {
@@ -234,37 +260,67 @@ const actions = {
         onConnectionStatus: (status) => {
           console.log('[WhatsApp Store] Estado de conexión:', status)
 
+          if (status.phoneMismatch) {
+            // BLOQUEO DURO: número incorrecto escaneado
+            console.error('[WhatsApp Store] 🚫 Número incorrecto — cuenta bloqueada')
+            commit('SET_PHONE_MISMATCH', {
+              boundPhone: status.boundPhone,
+              attemptedPhone: status.attemptedPhone,
+              message: status.error
+            })
+            commit('SET_CONNECTED', false)
+            commit('SET_CONNECTING', false)
+            commit('SET_QR_CODE', null)
+            _notifyError(`Número incorrecto. La cuenta está vinculada a +${status.boundPhone}`)
+            return
+          }
+
           if (status.connected) {
-            // Conexión establecida exitosamente
+            _clearConnectingWatchdog()
             commit('SET_CONNECTED', true)
             commit('SET_CONNECTING', false)
             commit('SET_QR_CODE', null)
             commit('SET_CONNECTION_INFO', status.user || status)
             commit('SET_CONNECTION_ERROR', null)
+            commit('CLEAR_PHONE_MISMATCH')
+            if (status.phoneNumber) commit('SET_BOUND_PHONE', status.phoneNumber)
             _notifyConnected()
+          } else if (status.giveUp) {
+            // El backend agotó sus reintentos automáticos (flapping persistente)
+            // y ya cerró la sesión por completo (borró las credenciales). A
+            // diferencia de requiresReauth "normal", aquí NO reintentamos solos
+            // ni generamos QR automáticamente — se le avisa al usuario y queda
+            // esperando que haga clic en "Reintentar" para volver a conectar
+            // (eso mostrará un QR nuevo, ya que la sesión anterior se borró).
+            console.warn('[WhatsApp Store] Conexión cerrada tras agotar reintentos — esperando reconexión manual')
+            _clearConnectingWatchdog()
+            commit('SET_CONNECTED', false)
+            commit('SET_CONNECTING', false)
+            commit('SET_QR_CODE', null)
+            commit('SET_CONNECTION_INFO', null)
+            commit('SET_CONNECTION_ERROR', status.error || GIVE_UP_ERROR_MSG)
+            toast.warning(status.error || GIVE_UP_ERROR_MSG, { timeout: 6000 })
           } else if (status.requiresReauth) {
-            // Sesión destruida (Bad MAC / loggedOut) - necesita nuevo QR
             console.warn('[WhatsApp Store] Sesión destruida - se requiere nuevo QR')
+            _clearConnectingWatchdog()
             commit('SET_CONNECTED', false)
             commit('SET_QR_CODE', null)
             commit('SET_CONNECTING', false)
             commit('SET_CONNECTION_INFO', null)
             _notifyReauth()
-            // Solicitar nuevo QR - con guardia para no crear loop
             setTimeout(() => {
               if (!state.connecting) dispatch('connect')
             }, 2000)
           } else if (status.reconnecting || status.status === 'connecting') {
-            // Backend reconectando automáticamente - mostrar estado "conectando"
             console.log('[WhatsApp Store] Reconectando automáticamente...')
             commit('SET_CONNECTED', false)
             commit('SET_CONNECTING', true)
+            _armConnectingWatchdog(commit)
           } else if (status.qr) {
-            // Backend enviando QR directamente en el status (caso especial)
             commit('SET_QR_CODE', status.qr)
           } else {
-            // Desconectado definitivamente (sin reconexión automática)
-            console.warn('[WhatsApp Store] Desconectado sin reconexión automática')
+            console.warn('[WhatsApp Store] Desconectado')
+            _clearConnectingWatchdog()
             commit('SET_CONNECTED', false)
             commit('SET_CONNECTING', false)
           }
@@ -295,26 +351,50 @@ const actions = {
         },
         
         onCampaignProgress: (data) => {
-          console.log('[WhatsApp Store] Progreso campaña:', data)
           commit('CAMPAIGN_PROGRESS', data)
+          dispatch('campaigns/onCampaignProgress', data, { root: true })
         },
 
         onCampaignCompleted: (data) => {
-          console.log('[WhatsApp Store] Campaña completada:', data)
-          // Emitir evento global para que los componentes puedan reaccionar
-          document.dispatchEvent(new CustomEvent('campaign-completed', { detail: data }))
+          dispatch('campaigns/onCampaignCompleted', data, { root: true })
         },
 
         onCampaignError: (data) => {
-          console.log('[WhatsApp Store] Error en campaña:', data)
-          // El backend maneja su propia reconexión - solo emitir evento para la UI
-          document.dispatchEvent(new CustomEvent('campaign-error', { detail: data }))
+          console.error('[WhatsApp Store] Error en campaña:', data)
         }
+      }
+
+      const setupPhoneEvents = (socket) => {
+        // whatsappService.connectSocket() reutiliza el mismo socket cacheado en
+        // llamadas repetidas a connect() (reconexiones, reintento tras
+        // requiresReauth) — sin esta guarda, cada llamada apila listeners
+        // nuevos sobre el mismo socket y los eventos llegan duplicados.
+        if (socket._phoneEventsRegistered) return
+        socket._phoneEventsRegistered = true
+
+        socket.on('phone-number-changed', (data) => {
+          commit('SET_BOUND_PHONE', data.newPhone)
+          commit('UPDATE_ACCOUNT_STATUS', { accountId: data.accountId, phoneNumber: data.newPhone })
+          toast.info(`Cuenta vinculada al número +${data.newPhone}`, { timeout: 5000 })
+        })
+        socket.on('phone-conflict', (data) => {
+          commit('SET_PHONE_CONFLICT', data)
+          toast.warning(data.message, { timeout: 8000 })
+        })
+        socket.on('account-status', (data) => {
+          commit('UPDATE_ACCOUNT_STATUS', {
+            accountId: data.accountId,
+            status: data.state,
+            connected: data.connected,
+            phoneNumber: data.phoneNumber
+          })
+        })
       }
       
       // Conectar socket con manejadores
       const socket = whatsappService.connectSocket(userId, eventHandlers)
       commit('SET_SOCKET', socket)
+      setupPhoneEvents(socket)
       
       // Esperar conexión del socket
       await new Promise((resolve, reject) => {
@@ -338,7 +418,7 @@ const actions = {
       })
       
       // Iniciar conexión WhatsApp
-      const connectResponse = await whatsappService.connect()
+      const connectResponse = await whatsappService.connect(force)
       console.log('[WhatsApp Store] Conexión iniciada')
 
       // Backend ya está reconectando automáticamente — no cambiar estado
@@ -374,6 +454,7 @@ const actions = {
 
     } catch (error) {
       console.error('[WhatsApp Store] Error conectando:', error)
+      _clearConnectingWatchdog()
       commit('SET_CONNECTION_ERROR', error.message)
       commit('SET_CONNECTING', false)
       _notifyError(error.message || 'Error al conectar WhatsApp')
@@ -385,62 +466,65 @@ const actions = {
     //   Desconexión definitiva → SET_CONNECTING(false)
   },
   
+  // El usuario no quiere/puede esperar a que el backend se recupere solo:
+  // rompe cualquier intento atascado y fuerza un QR nuevo de inmediato.
+  async forceReconnect({ commit, dispatch }) {
+    console.log('[WhatsApp Store] 🔴 Forzando reconexión y nuevo QR...')
+    _clearConnectingWatchdog()
+    commit('SET_CONNECTION_ERROR', null)
+    commit('SET_QR_CODE', null)
+    commit('SET_CONNECTED', false)
+    commit('SET_CONNECTING', true)
+    _armConnectingWatchdog(commit)
+    try {
+      await dispatch('connect', { force: true })
+    } catch (error) {
+      console.error('[WhatsApp Store] Error forzando reconexión:', error)
+      commit('SET_CONNECTING', false)
+      commit('SET_CONNECTION_ERROR', error.message || 'No se pudo forzar la reconexión')
+    }
+  },
+
   async disconnect({ commit, state }) {
     console.log('[WhatsApp Store] Ejecutando acción disconnect')
-    // Resetear para que la próxima conexión muestre toast
     _lastConnectedState = null
-    
-    // Ejecutar limpieza si existe
+    _clearConnectingWatchdog()
+
+    // 1. Llamar al logout HTTP para desconectar WhatsApp del servidor
+    try {
+      await whatsappService.disconnect()
+      console.log('[WhatsApp Store] WhatsApp desconectado del servidor')
+    } catch (error) {
+      // No bloquear — continuar limpiando el estado local
+      console.warn('[WhatsApp Store] Error al llamar logout HTTP (continuando limpieza):', error.message)
+    }
+
+    // 2. Limpiar estado del store
+    commit('SET_CONNECTED', false)
+    commit('SET_CONNECTING', false)
+    commit('SET_QR_CODE', null)
+    commit('SET_CONNECTION_INFO', null)
+    commit('SET_CONNECTION_ERROR', null)
+
+    // 3. Ejecutar limpieza si existe
     if (state.cleanupSocket) {
-      console.log('[WhatsApp Store] Ejecutando limpieza de socket')
       state.cleanupSocket()
       commit('SET_CLEANUP', null)
     }
-    
-    if (!state.socket) {
-      console.log('[WhatsApp Store] No hay conexión activa para desconectar')
-      return Promise.resolve()
-    }
-    
-    return new Promise((resolve, reject) => {
-      console.log('[WhatsApp Store] Desconectando socket')
-      
-      // Manejar el evento de desconexión
-      const onDisconnect = () => {
-        console.log('[WhatsApp Store] Socket desconectado exitosamente')
-        commit('SET_CONNECTED', false)
-        commit('SET_QR_CODE', null)
-        commit('SET_CONNECTION_INFO', null)
-        commit('SET_SOCKET', null)
-        resolve()
-      }
-      
-      // Configurar timeout para la desconexión
-      const disconnectTimeout = setTimeout(() => {
-        console.warn('[WhatsApp Store] Timeout al desconectar, forzando')
-        state.socket.off('disconnect', onDisconnect)
-        commit('SET_SOCKET', null)
-        resolve()
-      }, 5000) // 5 segundos de timeout
-      
-      // Configurar manejador de desconexión
-      state.socket.once('disconnect', () => {
-        clearTimeout(disconnectTimeout)
-        onDisconnect()
-      })
-      
-      // Iniciar desconexión
+
+    // 4. Desconectar socket
+    if (state.socket) {
       try {
+        state.socket.removeAllListeners()
         state.socket.disconnect()
-      } catch (error) {
-        console.error('[WhatsApp Store] Error al desconectar:', error)
-        commit('SET_CONNECTION_ERROR', error.message || 'Error al desconectar')
-        reject(error)
+      } catch (e) {
+        console.warn('[WhatsApp Store] Error desconectando socket:', e.message)
       }
-    })
+      commit('SET_SOCKET', null)
+    }
   },
   
-  async checkStatus({ commit }) {
+  async checkStatus({ commit, state, dispatch }) {
     console.log('[WhatsApp Store] Verificando estado de WhatsApp')
     try {
       const status = await whatsappService.syncConnectionStatus()
@@ -459,6 +543,12 @@ const actions = {
         isReallyConnected: isReallyConnected
       })
 
+      // El store creía que estaba conectado y el backend ya no lo está: esto detecta
+      // un logout remoto (desde el teléfono) cuyo evento de socket no llegó a tiempo
+      // (socket caído, laptop en sleep, etc.) — el poll periódico es el respaldo.
+      const wasConnected = state.connected
+      const missedRemoteLogout = wasConnected && !isReallyConnected && status.state !== 'connecting'
+
       commit('SET_CONNECTED', isReallyConnected)
       commit('SET_CONNECTION_INFO', status.user || status.connectionInfo)
 
@@ -468,6 +558,12 @@ const actions = {
       } else if (status.state === 'connecting') {
         // Si está conectando, limpiar error pero no marcar como conectado
         commit('SET_CONNECTION_ERROR', null)
+      } else if (missedRemoteLogout) {
+        commit('SET_QR_CODE', null)
+        _notifyReauth()
+        setTimeout(() => {
+          if (!state.connecting) dispatch('connect')
+        }, 2000)
       }
 
       return { ...status, connected: isReallyConnected }
@@ -657,8 +753,9 @@ const actions = {
   async createCampaign({ commit }, campaignData) {
     console.log('[WhatsApp Store] Creando campaña')
     try {
+      // El toast de éxito lo muestra el componente: el mensaje difiere si la
+      // campaña se programó para el futuro o se está enviando ya.
       const result = await whatsappService.createCampaign(campaignData)
-      toast.success('Campaña creada exitosamente')
       return result
     } catch (error) {
       console.error('[WhatsApp Store] Error creando campaña:', error)
@@ -680,6 +777,18 @@ const actions = {
     }
   },
   
+  async rescheduleCampaign({ commit }, { campaignId, sendAt }) {
+    try {
+      const result = await whatsappService.rescheduleCampaign(campaignId, sendAt)
+      toast.success('Campaña reprogramada')
+      return result
+    } catch (error) {
+      console.error('[WhatsApp Store] Error reprogramando campaña:', error)
+      toast.error(error.message || 'Error al reprogramar campaña')
+      throw error
+    }
+  },
+
   async pauseCampaign({ commit }, campaignId) {
     console.log('[WhatsApp Store] Pausando campaña')
     try {
@@ -719,6 +828,93 @@ const actions = {
     }
   },
 
+  async fetchBoundPhoneNumber({ commit }) {
+    try {
+      const result = await whatsappService.getPhoneNumber()
+      const phone = typeof result === 'string' ? result : result?.phoneNumber || null
+      commit('SET_BOUND_PHONE', phone)
+      return phone
+    } catch (error) {
+      return null
+    }
+  },
+
+  async clearPhoneBinding({ commit, dispatch }) {
+    try {
+      await whatsappService.clearPhoneBinding()
+      commit('SET_BOUND_PHONE', null)
+      commit('CLEAR_PHONE_MISMATCH')
+      commit('SET_CONNECTED', false)
+      commit('SET_QR_CODE', null)
+      commit('SET_CONNECTING', false)
+      toast.success('Número desvinculado. Escanea el QR para vincular uno nuevo.')
+    } catch (error) {
+      toast.error('Error al desvincular: ' + (error.message || 'intenta de nuevo'))
+      throw error
+    }
+  },
+
+  async fetchAccounts({ commit }) {
+    try {
+      const accounts = await whatsappService.getAccounts()
+      commit('SET_ACCOUNTS', accounts)
+      // Marcar la cuenta activa (default o la primera conectada)
+      const activeAcc = accounts.find(a => a.is_connected) || accounts.find(a => a.is_default) || accounts[0]
+      if (activeAcc) {
+        commit('SET_ACTIVE_ACCOUNT_ID', activeAcc.id)
+        if (activeAcc.phone_number) commit('SET_BOUND_PHONE', activeAcc.phone_number)
+      }
+      return accounts
+    } catch (error) {
+      console.error('[WhatsApp Store] Error cargando cuentas:', error)
+      return []
+    }
+  },
+
+  async checkCanAddAccount({ commit }) {
+    try {
+      const result = await whatsappService.checkCanAddAccount()
+      commit('SET_CAN_ADD_ACCOUNT', result)
+      return result
+    } catch (error) {
+      return { canAdd: false, current: 0, maxAllowed: 1 }
+    }
+  },
+
+  async addAccount({ commit, dispatch }, accountName) {
+    try {
+      const account = await whatsappService.createAccount(accountName)
+      await dispatch('fetchAccounts')
+      toast.success(`Cuenta "${accountName}" creada exitosamente`)
+      return account
+    } catch (error) {
+      toast.error(error.message || 'Error al crear la cuenta')
+      throw error
+    }
+  },
+
+  async connectAccount({ commit, dispatch }, accountId) {
+    try {
+      await whatsappService.connectAccount(accountId)
+      commit('SET_ACTIVE_ACCOUNT_ID', accountId)
+      // El socket recibirá los eventos de QR/connection-status
+    } catch (error) {
+      toast.error('Error al conectar la cuenta')
+      throw error
+    }
+  },
+
+  async removeAccount({ commit, dispatch }, accountId) {
+    try {
+      await whatsappService.deleteAccount(accountId)
+      await dispatch('fetchAccounts')
+      toast.success('Cuenta eliminada')
+    } catch (error) {
+      toast.error(error.message || 'Error al eliminar la cuenta')
+      throw error
+    }
+  },
+
   async fetchTodayMessagesStats({ commit }) {
     console.log('[WhatsApp Store] Obteniendo estadísticas de mensajes del día')
     try {
@@ -737,6 +933,7 @@ const actions = {
 }
 
 const getters = {
+  socket: state => state.socket,
   isConnected: state => state.connected,
   isConnecting: state => state.connecting,
   qrCode: state => state.qrCode,
@@ -747,6 +944,14 @@ const getters = {
   campaignProgress: state => state.campaignProgress,
   todayMessagesCount: state => state.todayMessagesCount,
   monthlyLimit: state => state.monthlyLimit,
+  boundPhoneNumber: state => state.boundPhoneNumber,
+  phoneConflict: state => state.phoneConflict,
+  phoneMismatch: state => state.phoneMismatch,
+  accounts: state => state.accounts,
+  activeAccountId: state => state.activeAccountId,
+  canAddAccount: state => state.canAddAccount,
+  maxAccounts: state => state.maxAccounts,
+  connectedAccounts: state => state.accounts.filter(a => a.is_connected),
   messagesProgress: state => {
     const progress = state.monthlyLimit > 0 ? (state.todayMessagesCount / state.monthlyLimit) * 100 : 0
     return Math.min(progress, 100)

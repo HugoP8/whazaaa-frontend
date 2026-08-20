@@ -350,29 +350,10 @@ const campaignStats = ref({
 })
 
 // Estados computados
-const isConnected = computed(() => {
-  const connected = store.getters['whatsapp/isConnected']
-  console.log('[Dashboard] isConnected:', connected)
-  return connected
-})
-
-const connecting = computed(() => {
-  const connecting = store.getters['whatsapp/isConnecting']
-  console.log('[Dashboard] connecting:', connecting)
-  return connecting
-})
-
-const connectionInfo = computed(() => {
-  const info = store.getters['whatsapp/connectionInfo']
-  console.log('[Dashboard] connectionInfo:', info)
-  return info
-})
-
-const recentCampaigns = computed(() => {
-  const campaigns = store.getters['campaigns/recentCampaigns'] || []
-  console.log('[Dashboard] recentCampaigns:', campaigns.length)
-  return campaigns
-})
+const isConnected = computed(() => store.getters['whatsapp/isConnected'])
+const connecting = computed(() => store.getters['whatsapp/isConnecting'])
+const connectionInfo = computed(() => store.getters['whatsapp/connectionInfo'])
+const recentCampaigns = computed(() => store.getters['campaigns/recentCampaigns'] || [])
 
 // Computed para balance de créditos
 const creditBalance = computed(() => {
@@ -437,7 +418,7 @@ const quickActions = computed(() => {
       color: 'success',
       to: '/campaigns',
       disabled: false,
-      badge: statData.total > 0 ? `${statData.total}` : null,
+      badge: statData.totalCampaigns > 0 ? `${statData.totalCampaigns}` : null,
       badgeColor: 'success'
     },
     {
@@ -477,85 +458,48 @@ const handleActionClick = (action) => {
   }
 }
 
-// Método para manejar éxito de recarga
 const handleRechargeSuccess = async () => {
-  console.log('[Dashboard] Recarga exitosa - Actualizando balance...')
-  // Recargar balance después de solicitud exitosa
   await loadCreditBalance()
   toast.success('Solicitud de recarga registrada. Contacta a tu vendedor para completar el pago.')
 }
 
-// Método para manejar créditos ganados por video
 const handleVideoCreditsEarned = async (data) => {
-  console.log('[Dashboard] Créditos ganados por video:', data)
   toast.success(`¡Has ganado ${data.credits} crédito${data.credits > 1 ? 's' : ''}!`)
-  // El balance ya se actualiza desde el modal, pero refrescamos por si acaso
   await loadCreditBalance()
 }
 
-// Cargar balance de créditos
 const loadCreditBalance = async () => {
   try {
-    console.log('[Dashboard] Cargando balance de créditos...')
     await store.dispatch('credits/fetchBalance')
-    console.log('[Dashboard] Balance de créditos cargado')
   } catch (error) {
     console.error('[Dashboard] Error cargando balance de créditos:', error)
-    // No mostrar error al usuario, el balance se muestra como 0 por defecto
   }
 }
 
-// ✅ ACTUALIZADO: Cargar estadísticas con nuevos campos
 const loadCampaignStats = async () => {
   if (!isConnected.value) return
-
   try {
     statsLoading.value = true
-    console.log('[Dashboard] Cargando estadísticas de campañas...')
-
     const stats = await store.dispatch('campaigns/fetchCampaignStats')
-    campaignStats.value = stats || {
-      totalCampaigns: 0,
-      completedCampaigns: 0,
-      activeCampaigns: 0,
-      failedCampaigns: 0
-    }
-
-    console.log('[Dashboard] Estadísticas cargadas:', stats)
+    campaignStats.value = stats || { totalCampaigns: 0, completedCampaigns: 0, activeCampaigns: 0, failedCampaigns: 0 }
   } catch (error) {
     console.error('[Dashboard] Error cargando estadísticas:', error)
-    campaignStats.value = {
-      totalCampaigns: 0,
-      completedCampaigns: 0,
-      activeCampaigns: 0,
-      failedCampaigns: 0
-    }
+    campaignStats.value = { totalCampaigns: 0, completedCampaigns: 0, activeCampaigns: 0, failedCampaigns: 0 }
   } finally {
     statsLoading.value = false
   }
 }
 
-// ✅ NUEVO: Cargar estadísticas de mensajes últimos 7 días
 const loadLast7DaysStats = async () => {
   if (!isConnected.value) return
-
   try {
     chartLoading.value = true
-    console.log('[Dashboard] Cargando estadísticas de últimos 7 días...')
-
     const response = await api.get('/whatsapp/stats/last-7-days')
-
     if (response.data.success) {
       last7DaysStats.value = response.data.data
-      console.log('[Dashboard] Estadísticas de 7 días cargadas:', last7DaysStats.value)
-
-      // Esperar a que el loading termine y el canvas sea visible
       chartLoading.value = false
-
-      // Esperar dos ciclos de Vue para asegurar que el DOM esté completamente actualizado
       await nextTick()
       await nextTick()
-
       createChart()
     }
   } catch (error) {
@@ -565,25 +509,10 @@ const loadLast7DaysStats = async () => {
   }
 }
 
-// ✅ NUEVO: Crear gráfico con Chart.js
 const createChart = () => {
-  console.log('[Dashboard] Intentando crear gráfico...')
-  console.log('[Dashboard] messagesChart.value:', messagesChart.value)
-  console.log('[Dashboard] last7DaysStats.value:', last7DaysStats.value)
+  if (!messagesChart.value || !last7DaysStats.value?.chartData) return
 
-  if (!messagesChart.value) {
-    console.warn('[Dashboard] No se puede crear el gráfico - canvas ref no disponible')
-    return
-  }
-
-  if (!last7DaysStats.value || !last7DaysStats.value.chartData) {
-    console.warn('[Dashboard] No se puede crear el gráfico - datos faltantes', last7DaysStats.value)
-    return
-  }
-
-  // Destruir gráfico anterior si existe
   if (chartInstance) {
-    console.log('[Dashboard] Destruyendo gráfico anterior')
     chartInstance.destroy()
     chartInstance = null
   }
@@ -668,7 +597,6 @@ const createChart = () => {
       }
     })
 
-    console.log('[Dashboard] Gráfico creado exitosamente:', chartInstance)
   } catch (error) {
     console.error('[Dashboard] Error creando gráfico:', error)
   }
@@ -676,57 +604,36 @@ const createChart = () => {
 
 const loadRecentCampaigns = async () => {
   if (!isConnected.value) return
-
   try {
     campaignsLoading.value = true
-    console.log('[Dashboard] Cargando campañas recientes...')
-    await store.dispatch('campaigns/fetchCampaigns', {
-      page: 1,
-      perPage: 5
-    })
-    console.log('[Dashboard] Campañas recientes cargadas')
+    await store.dispatch('campaigns/fetchCampaigns', { page: 1, perPage: 5 })
   } catch (error) {
     console.error('[Dashboard] Error cargando campañas recientes:', error)
-    // No mostrar error al usuario para campañas recientes
   } finally {
     campaignsLoading.value = false
   }
 }
 
-// Watch para cargar datos cuando se conecte WhatsApp
 watch(isConnected, async (newValue, oldValue) => {
-  console.log('[Dashboard] WhatsApp connection changed:', { old: oldValue, new: newValue })
-
   if (newValue && !oldValue) {
-    console.log('[Dashboard] WhatsApp conectado - Cargando datos...')
-
-    // Cargar datos en paralelo
     await Promise.allSettled([
       loadCampaignStats(),
       loadRecentCampaigns(),
       loadLast7DaysStats(),
-      loadCreditBalance()  // ✅ NUEVO: Cargar balance de créditos
+      loadCreditBalance()
     ])
-
-    console.log('[Dashboard] Datos cargados exitosamente')
   }
 }, { immediate: false })
 
-// Lifecycle
 onMounted(async () => {
-  console.log('[Dashboard] Componente montado')
-
-  // Cargar balance de créditos siempre (no requiere WhatsApp)
   loadCreditBalance().catch(() => {})
-
   try {
-    // Auto-conectar WhatsApp: si hay sesión guardada se reconecta automáticamente sin QR
+    await Promise.allSettled([
+      store.dispatch('whatsapp/fetchAccounts'),
+      store.dispatch('whatsapp/checkCanAddAccount')
+    ])
     await store.dispatch('whatsapp/connect')
-    console.log('[Dashboard] Auto-conexión WhatsApp iniciada')
-
-    // Si ya está conectado, cargar datos inmediatamente
     if (isConnected.value) {
-      console.log('[Dashboard] Conectado - Cargando datos iniciales...')
       await Promise.allSettled([
         loadCampaignStats(),
         loadRecentCampaigns(),
@@ -735,7 +642,6 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('[Dashboard] Error en auto-conexión WhatsApp:', error)
-    // No bloquear el dashboard - el componente QRCode mostrará la opción de conectar
   }
 })
 

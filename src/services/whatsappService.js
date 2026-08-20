@@ -64,12 +64,11 @@ class WhatsAppService {
         }
       }
       
-      // 4. Valor por defecto para desarrollo
-      console.warn('[WhatsApp Service] 🚨 No se encontró userId, usando 1 por defecto')
-      return 1
+      throw new Error('No se encontró ID de usuario. Por favor, inicia sesión nuevamente.')
     } catch (error) {
+      if (error.message.includes('ID de usuario')) throw error
       console.error('[WhatsApp Service] Error obteniendo userId:', error)
-      return 1
+      throw new Error('Error obteniendo ID de usuario. Por favor, inicia sesión nuevamente.')
     }
   }
 
@@ -89,58 +88,34 @@ class WhatsAppService {
     }
 
     this.userId = finalUserId
-    console.log(`[WhatsApp Service] Conectando socket para usuario: ${finalUserId}`)
-
-    // Obtener token del localStorage
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('[WhatsApp Service] 🔍 INICIANDO CONEXIÓN SOCKET')
-    console.log('[WhatsApp Service] UserId:', finalUserId)
 
     let token = localStorage.getItem('token')
-    console.log('[WhatsApp Service] Token RAW del localStorage:', token ? token.substring(0, 30) + '...' : 'NULL')
-
-    // Limpiar el token si está en formato JSON
     if (token) {
       try {
         const parsed = JSON.parse(token)
         token = typeof parsed === 'string' ? parsed : token
-        console.log('[WhatsApp Service] Token después de parsear:', token ? token.substring(0, 30) + '...' : 'NULL')
-      } catch (e) {
-        console.log('[WhatsApp Service] Token NO es JSON, usando tal cual')
-      }
+      } catch (e) {}
     }
 
-    console.log('[WhatsApp Service] 🔑 Token presente:', !!token)
-    console.log('[WhatsApp Service] 🔑 Token length:', token ? token.length : 0)
-    console.log('[WhatsApp Service] 🔑 Token tipo:', typeof token)
-
-    // Configuración del socket CON autenticación JWT
     const socketConfig = {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,
       reconnectionDelay: 2000,
-      reconnectionAttempts: 3,
+      reconnectionDelayMax: 15000,
+      // Reconexión indefinida con backoff: si se corta el socket (wifi, laptop en sleep, etc.)
+      // no debe dejar de intentar tras solo 3 intentos, porque es el canal por el que llega
+      // el evento de logout remoto de WhatsApp (connection-status / requiresReauth).
+      reconnectionAttempts: Infinity,
       timeout: 15000,
       query: { userId: finalUserId }
     }
 
-    // Agregar autenticación JWT si hay token
     if (token) {
-      socketConfig.auth = {
-        token: token
-      }
-      console.log('[WhatsApp Service] ✅ Socket configurado con autenticación JWT')
-      console.log('[WhatsApp Service] socketConfig.auth:', socketConfig.auth)
+      socketConfig.auth = { token }
     } else {
-      console.error('[WhatsApp Service] ❌❌❌ NO HAY TOKEN - Socket sin autenticación')
-      console.error('[WhatsApp Service] localStorage keys:', Object.keys(localStorage))
-      console.error('[WhatsApp Service] localStorage.user:', localStorage.getItem('user'))
+      console.error('[WhatsApp Service] Sin token — el socket no podrá autenticarse')
     }
-
-    console.log('[WhatsApp Service] 📡 Conectando a:', SOCKET_URL)
-    console.log('[WhatsApp Service] 📡 Config completo:', JSON.stringify(socketConfig, null, 2))
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
     this.socket = io(SOCKET_URL, socketConfig)
 
@@ -274,11 +249,11 @@ class WhatsAppService {
     }
   }
 
-  // Conectar WhatsApp (llamada HTTP)
-  async connect() {
+  // Conectar WhatsApp (llamada HTTP). force=true rompe un intento atascado y fuerza QR nuevo.
+  async connect(force = false) {
     try {
-      console.log('[WhatsApp Service] Iniciando conexión WhatsApp via API')
-      const response = await api.post('/whatsapp/connect')
+      console.log('[WhatsApp Service] Iniciando conexión WhatsApp via API', { force })
+      const response = await api.post('/whatsapp/connect', { force })
       console.log('[WhatsApp Service] Respuesta de conexión:', response.data)
       return response.data
     } catch (error) {
@@ -329,39 +304,6 @@ class WhatsAppService {
     try {
       console.log('[WhatsApp Service] Obteniendo grupos')
       const response = await api.get('/whatsapp/groups')
-      console.log('[WhatsApp Service] Grupos obtenidos:', response.data.data?.length || 0)
-      
-      // 🔍 LOG COMPLETO DE LA RESPUESTA DEL BACKEND
-      console.log('🔍 [WhatsApp Service] RESPONSE COMPLETA DEL BACKEND:')
-      console.log('📊 response.data:', response.data)
-      console.log('📊 response.data.data:', response.data.data)
-      console.log('📊 response.status:', response.status)
-      console.log('📊 response.headers:', response.headers)
-      
-      // 🔍 LOG DETALLADO DE CADA GRUPO
-      if (response.data.data && response.data.data.length > 0) {
-        console.log('🔍 [WhatsApp Service] ESTRUCTURA DE LOS PRIMEROS 3 GRUPOS:')
-        response.data.data.slice(0, 3).forEach((group, index) => {
-          console.log(`📋 GRUPO ${index + 1} COMPLETO:`, JSON.stringify(group, null, 2))
-          console.log(`📋 GRUPO ${index + 1} KEYS:`, Object.keys(group))
-          console.log(`📋 GRUPO ${index + 1} VALUES:`, Object.values(group))
-          
-          // Verificar diferentes formas de almacenar participantes
-          console.log(`🧑‍🤝‍🧑 PARTICIPANTES EN TODAS LAS FORMAS POSIBLES:`)
-          console.log(`- group.participants:`, group.participants)
-          console.log(`- group.participants?.length:`, group.participants?.length)
-          console.log(`- group.members:`, group.members)
-          console.log(`- group.members?.length:`, group.members?.length)
-          console.log(`- group.size:`, group.size)
-          console.log(`- group.participantCount:`, group.participantCount)
-          console.log(`- group.memberCount:`, group.memberCount)
-          console.log(`- group.groupSize:`, group.groupSize)
-          console.log(`- group.count:`, group.count)
-          console.log(`- group.total:`, group.total)
-          console.log(`-------------------`)
-        })
-      }
-      
       return response.data.data || []
     } catch (error) {
       console.error('[WhatsApp Service] Error obteniendo grupos:', error)
@@ -517,6 +459,17 @@ class WhatsAppService {
     }
   }
 
+  // Reprogramar una campaña SCHEDULED (sendAt debe ser un ISO string en UTC)
+  async rescheduleCampaign(campaignId, sendAt) {
+    try {
+      const response = await api.put(`/campaigns/${campaignId}/reschedule`, { sendAt })
+      return response.data
+    } catch (error) {
+      console.error('[WhatsApp Service] Error reprogramando campaña:', error)
+      throw new Error(error.response?.data?.error || 'Error al reprogramar campaña')
+    }
+  }
+
   // Pausar campaña
   async pauseCampaign(campaignId) {
     try {
@@ -590,6 +543,85 @@ class WhatsAppService {
       connected: this.connected,
       socketId: this.socket?.id,
       userId: this.userId
+    }
+  }
+
+  // ============================================================
+  // GESTIÓN DE CUENTAS (múltiples números por usuario)
+  // ============================================================
+
+  async getAccounts() {
+    try {
+      const response = await api.get('/whatsapp/accounts')
+      return response.data.data || []
+    } catch (error) {
+      console.error('[WhatsApp Service] Error obteniendo cuentas:', error)
+      return []
+    }
+  }
+
+  async checkCanAddAccount() {
+    try {
+      const response = await api.get('/whatsapp/accounts/can-add')
+      return response.data
+    } catch (error) {
+      return { canAdd: false, current: 0, maxAllowed: 1 }
+    }
+  }
+
+  async createAccount(accountName = 'Mi WhatsApp') {
+    try {
+      const response = await api.post('/whatsapp/accounts', { accountName })
+      return response.data.data
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Error al crear la cuenta')
+    }
+  }
+
+  async connectAccount(accountId) {
+    try {
+      const response = await api.post(`/whatsapp/accounts/${accountId}/connect`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Error al conectar la cuenta')
+    }
+  }
+
+  async logoutAccount(accountId) {
+    try {
+      const response = await api.post(`/whatsapp/accounts/${accountId}/logout`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Error al desconectar la cuenta')
+    }
+  }
+
+  async deleteAccount(accountId) {
+    try {
+      const response = await api.delete(`/whatsapp/accounts/${accountId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Error al eliminar la cuenta')
+    }
+  }
+
+  // Obtener número de teléfono vinculado a la cuenta
+  async getPhoneNumber() {
+    try {
+      const response = await api.get('/whatsapp/phone-number')
+      return response.data
+    } catch (error) {
+      return null
+    }
+  }
+
+  // Desvincular número (borra sesión + limpia BD → siguiente connect genera nuevo QR)
+  async clearPhoneBinding() {
+    try {
+      const response = await api.post('/whatsapp/phone-number/clear')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Error al desvincular número')
     }
   }
 

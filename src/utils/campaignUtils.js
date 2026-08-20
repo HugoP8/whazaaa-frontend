@@ -7,6 +7,12 @@ export const getStatusBadgeConfig = (campaign) => {
       vuetifyColor: 'info',
       icon: 'mdi-clock-outline'
     },
+    SCHEDULED: {
+      color: 'purple',
+      class: 'bg-purple-100 text-purple-800 border-purple-200',
+      vuetifyColor: 'purple',
+      icon: 'mdi-calendar-clock'
+    },
     RUNNING: {
       color: 'warning', 
       class: 'bg-yellow-100 text-yellow-800 border-yellow-200',

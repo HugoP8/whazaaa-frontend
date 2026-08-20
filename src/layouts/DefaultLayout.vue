@@ -154,13 +154,7 @@ const userMenuOpen = ref(false)
 
 const currentUser = computed(() => store.getters['auth/user'])
 const userDisplayInfo = computed(() => store.getters['auth/userDisplayInfo'])
-const isAdmin = computed(() => {
-  const admin = store.getters['auth/isAdmin']
-  console.log('[DefaultLayout] isAdmin:', admin)
-  console.log('[DefaultLayout] currentUser:', currentUser.value)
-  console.log('[DefaultLayout] user role:', currentUser.value?.role)
-  return admin
-})
+const isAdmin = computed(() => store.getters['auth/isAdmin'])
 
 const goToDashboard = () => {
   router.push('/dashboard')

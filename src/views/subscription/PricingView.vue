@@ -643,11 +643,10 @@ const currentPlan = computed(() => store.getters['credits/currentPlan'] || 'free
 const userId = computed(() => store.getters['auth/user']?.id || 0)
 const userEmail = computed(() => store.getters['auth/user']?.email || '')
 
-// Información del vendedor (idealmente vendría del backend)
 const vendorInfo = ref({
-  whatsapp: '59160000000',
-  email: 'ventas@whazaaa.com',
-  phone: '+591 6000-0000'
+  whatsapp: import.meta.env.VITE_SALES_WA || '5491112345678',
+  email: import.meta.env.VITE_SALES_EMAIL || 'ventas@whazaaa.com',
+  phone: import.meta.env.VITE_VENDOR_PHONE || ''
 })
 
 // Methods

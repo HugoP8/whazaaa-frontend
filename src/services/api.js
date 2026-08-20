@@ -27,67 +27,40 @@ export const campaignAPI = axios.create({
 const setupInterceptors = (apiInstance, instanceName = 'API') => {
   apiInstance.interceptors.request.use(
     config => {
-      // Para rutas de campaigns, aumentar timeout automáticamente
       if (config.url?.includes('/campaigns') && instanceName === 'API') {
-        config.timeout = 60000; // 60 segundos para operaciones de campañas
-        console.log(`[${instanceName}] Timeout extendido para campaña:`, config.url)
+        config.timeout = 60000
       }
 
-      // Obtener token del localStorage (puede estar como string o JSON)
       let token = localStorage.getItem('token')
-
       if (token) {
         try {
-          // Si el token es un JSON válido (por ejemplo, '"mi_token"'), lo parseamos
-          // Si es un token normal (ej: 'ey...'), JSON.parse fallará o devolverá algo incorrecto
           if (token.startsWith('"') && token.endsWith('"')) {
             token = JSON.parse(token)
           }
-        } catch (e) {
-          // Si no es JSON válido, usamos el valor original
-          console.log('[API] Error parseando token como JSON, usando valor original')
-        }
-
-        console.log(`[${instanceName}] Interceptor request:`, config.url, 'Token:', token ? 'Presente' : 'No encontrado')
+        } catch (e) {}
         config.headers.Authorization = `Bearer ${token}`
-      } else {
-        console.log(`[${instanceName}] Interceptor request:`, config.url, 'Sin token')
       }
 
       return config
     },
-    error => {
-      console.error(`[${instanceName}] Error en el interceptor de solicitud:`, error)
-      return Promise.reject(error)
-    }
+    error => Promise.reject(error)
   )
 
   apiInstance.interceptors.response.use(
     response => {
-      console.log(`[${instanceName}] Interceptor response:`, response.config.url, 'Estado:', response.status)
+      // Asignar role por defecto si el backend no lo envió
+      if (response.config.url?.includes('/auth/login') && response.data?.user && !response.data.user.role) {
+        const email = response.data.user.email || ''
+        if (email.includes('superadmin')) response.data.user.role = 'superadmin'
+        else if (email.includes('admin')) response.data.user.role = 'admin'
+        else response.data.user.role = 'user'
+      }
 
-      // WORKAROUND: Agregar role si el backend no lo envía
-      if (response.config.url?.includes('/auth/login') && response.data?.user) {
-        console.log('✅ [API] Respuesta de login recibida')
-        console.log('✅ [API] Usuario:', response.data.user)
-        console.log('✅ [API] Role del usuario:', response.data.user.role)
-
-        // Si no hay role, agregarlo basándose en el email
-        if (!response.data.user.role) {
-          console.warn('⚠️ [API] Backend NO envió campo role, agregando automáticamente')
-
-          const email = response.data.user.email || ''
-
-          if (email.includes('superadmin')) {
-            response.data.user.role = 'superadmin'
-          } else if (email.includes('admin')) {
-            response.data.user.role = 'admin'
-          } else {
-            response.data.user.role = 'user'
-          }
-
-          console.log('🔧 [API] Role asignado automáticamente:', response.data.user.role)
-        }
+      // Renovación silenciosa de sesión: el backend manda un token nuevo cuando
+      // al actual le queda poco tiempo. Lo guardamos sin interrumpir al usuario.
+      const newToken = response.headers?.['x-new-token']
+      if (newToken) {
+        localStorage.setItem('token', JSON.stringify(newToken))
       }
 
       return response

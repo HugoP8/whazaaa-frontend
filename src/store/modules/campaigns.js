@@ -15,7 +15,7 @@ const state = {
   reuseData: null,
   pagination: {
     page: 1,
-    perPage: 1000, // Mostrar todas las campañas
+    perPage: 20,
     total: 0,
     totalPages: 0
   },
@@ -28,80 +28,82 @@ const state = {
 
 const mutations = {
   SET_CAMPAIGNS(state, campaigns) {
-    console.log('[Campaigns Store] SET_CAMPAIGNS:', campaigns.length, 'campañas')
     state.campaigns = campaigns
   },
-  
+
   SET_CURRENT_CAMPAIGN(state, campaign) {
-    console.log('[Campaigns Store] SET_CURRENT_CAMPAIGN:', campaign?.id || 'null')
     state.currentCampaign = campaign
   },
-  
+
   ADD_CAMPAIGN(state, campaign) {
-    console.log('[Campaigns Store] ADD_CAMPAIGN:', campaign.id)
     state.campaigns.unshift(campaign)
   },
-  
-  UPDATE_CAMPAIGN(state, updatedCampaign) {
-    console.log('[Campaigns Store] UPDATE_CAMPAIGN:', updatedCampaign.id, updatedCampaign)
-    const index = state.campaigns.findIndex(c => c.id === updatedCampaign.id)
-    if (index !== -1) {
-      // Usar Object.assign para mantener reactividad y actualizar propiedades
-      Object.assign(state.campaigns[index], updatedCampaign)
-      console.log('[Campaigns Store] ✅ Campaña actualizada en index:', index)
-    } else {
-      console.warn('[Campaigns Store] ⚠️ Campaña no encontrada para actualizar:', updatedCampaign.id)
-    }
 
-    // Actualizar campaña actual si es la misma
-    if (state.currentCampaign?.id === updatedCampaign.id) {
-      state.currentCampaign = updatedCampaign
+  UPDATE_CAMPAIGN(state, updatedCampaign) {
+    const index = state.campaigns.findIndex(c => String(c.id) === String(updatedCampaign.id))
+    if (index !== -1) {
+      state.campaigns.splice(index, 1, { ...state.campaigns[index], ...updatedCampaign })
+    }
+    if (state.currentCampaign?.id == updatedCampaign.id) {
+      state.currentCampaign = { ...state.currentCampaign, ...updatedCampaign }
     }
   },
 
   UPDATE_CAMPAIGN_STATUS(state, { campaignId, status }) {
-    console.log('[Campaigns Store] UPDATE_CAMPAIGN_STATUS:', campaignId, status)
-    const campaign = state.campaigns.find(c => c.id === campaignId)
-    if (campaign) {
-      campaign.status = status
+    const index = state.campaigns.findIndex(c => String(c.id) === String(campaignId))
+    if (index !== -1) {
+      state.campaigns.splice(index, 1, { ...state.campaigns[index], status })
     }
-
-    // Actualizar campaña actual si coincide
-    if (state.currentCampaign?.id === campaignId) {
-      state.currentCampaign.status = status
+    if (state.currentCampaign?.id == campaignId) {
+      state.currentCampaign = { ...state.currentCampaign, status }
     }
   },
-  
+
+  UPDATE_CAMPAIGN_PROGRESS(state, { campaignId, sentCount, totalCount }) {
+    const index = state.campaigns.findIndex(c => String(c.id) === String(campaignId))
+    if (index === -1) return
+    state.campaigns.splice(index, 1, {
+      ...state.campaigns[index],
+      sent_count: sentCount,
+      total_recipients: totalCount || state.campaigns[index].total_recipients,
+      status: 'IN_PROGRESS'
+    })
+  },
+
+  UPDATE_CAMPAIGN_COMPLETED(state, { campaignId, status, successCount }) {
+    const index = state.campaigns.findIndex(c => String(c.id) === String(campaignId))
+    if (index === -1) return
+    state.campaigns.splice(index, 1, {
+      ...state.campaigns[index],
+      status: status || 'COMPLETED',
+      sent_count: successCount,
+      completed_at: new Date().toISOString()
+    })
+  },
+
   DELETE_CAMPAIGN(state, campaignId) {
-    console.log('[Campaigns Store] DELETE_CAMPAIGN:', campaignId)
     state.campaigns = state.campaigns.filter(c => c.id !== campaignId)
-    
-    // Limpiar campaña actual si es la que se eliminó
     if (state.currentCampaign?.id === campaignId) {
       state.currentCampaign = null
     }
   },
-  
+
   SET_LOADING(state, loading) {
-    console.log('[Campaigns Store] SET_LOADING:', loading)
     state.loading = loading
   },
-  
+
   SET_ERROR(state, error) {
-    console.log('[Campaigns Store] SET_ERROR:', error)
     state.error = error
   },
-  
+
   SET_PAGINATION(state, pagination) {
-    console.log('[Campaigns Store] SET_PAGINATION:', pagination)
     state.pagination = { ...state.pagination, ...pagination }
   },
-  
+
   SET_FILTERS(state, filters) {
-    console.log('[Campaigns Store] SET_FILTERS:', filters)
     state.filters = { ...state.filters, ...filters }
   },
-  
+
   CLEAR_ERROR(state) {
     state.error = null
   },
@@ -115,12 +117,10 @@ const mutations = {
   },
 
   SET_REUSE_DATA(state, data) {
-    console.log('[Campaigns Store] SET_REUSE_DATA:', data)
     state.reuseData = data
   },
 
   CLEAR_REUSE_DATA(state) {
-    console.log('[Campaigns Store] CLEAR_REUSE_DATA')
     state.reuseData = null
   },
 
@@ -136,25 +136,21 @@ const actions = {
   async fetchCampaigns({ commit, state }, params = {}) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Obteniendo campañas con parámetros:', params)
-      
       const queryParams = {
         page: params.page || state.pagination.page,
         perPage: params.perPage || state.pagination.perPage,
         ...state.filters,
         ...params
       }
-      
+
       const response = await api.get('/campaigns', { params: queryParams })
-      
       const { data, pagination } = response.data
-      
+
       commit('SET_CAMPAIGNS', data || [])
       commit('SET_PAGINATION', pagination)
-      
-      console.log('[Campaigns Store] Campañas obtenidas exitosamente:', data?.length || 0)
+
       return data
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo campañas:', error)
@@ -171,23 +167,14 @@ const actions = {
   async fetchCampaign({ commit }, campaignId) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Obteniendo campaña:', campaignId)
       const response = await api.get(`/campaigns/${campaignId}`)
-      
-      console.log('[Campaigns Store] Respuesta completa para campaña:', response.data)
-      
-      // Intentar diferentes estructuras de respuesta
       const campaign = response.data.data || response.data || response
-      
-      if (!campaign) {
-        throw new Error('Campaña no encontrada en la respuesta')
-      }
-      
+
+      if (!campaign) throw new Error('Campaña no encontrada en la respuesta')
+
       commit('SET_CURRENT_CAMPAIGN', campaign)
-      
-      console.log('[Campaigns Store] Campaña obtenida:', campaign.name || campaign.id || 'Sin nombre')
       return campaign
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo campaña:', error)
@@ -204,17 +191,12 @@ const actions = {
   async createCampaign({ commit }, campaignData) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Creando nueva campaña:', campaignData.name)
       const response = await api.post('/campaigns', campaignData)
-      
       const newCampaign = response.data.data
       commit('ADD_CAMPAIGN', newCampaign)
-      
       toast.success(`Campaña "${newCampaign.name}" creada exitosamente`)
-      console.log('[Campaigns Store] Campaña creada:', newCampaign.id)
-      
       return newCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error creando campaña:', error)
@@ -226,22 +208,17 @@ const actions = {
       commit('SET_LOADING', false)
     }
   },
-  
+
   // Actualizar campaña
   async updateCampaign({ commit }, { campaignId, campaignData }) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Actualizando campaña:', campaignId)
       const response = await api.put(`/campaigns/${campaignId}`, campaignData)
-      
       const updatedCampaign = response.data.data
       commit('UPDATE_CAMPAIGN', updatedCampaign)
-      
       toast.success(`Campaña "${updatedCampaign.name}" actualizada exitosamente`)
-      console.log('[Campaigns Store] Campaña actualizada:', updatedCampaign.id)
-      
       return updatedCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error actualizando campaña:', error)
@@ -253,20 +230,16 @@ const actions = {
       commit('SET_LOADING', false)
     }
   },
-  
+
   // Eliminar campaña
   async deleteCampaign({ commit }, campaignId) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Eliminando campaña:', campaignId)
       await api.delete(`/campaigns/${campaignId}`)
-      
       commit('DELETE_CAMPAIGN', campaignId)
-      
       toast.success('Campaña eliminada exitosamente')
-      console.log('[Campaigns Store] Campaña eliminada:', campaignId)
     } catch (error) {
       console.error('[Campaigns Store] Error eliminando campaña:', error)
       const errorMessage = error.response?.data?.message || error.message || 'Error al eliminar campaña'
@@ -277,22 +250,17 @@ const actions = {
       commit('SET_LOADING', false)
     }
   },
-  
+
   // Ejecutar campaña
-  async runCampaign({ commit, dispatch }, campaignId) {
+  async runCampaign({ commit }, campaignId) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Ejecutando campaña:', campaignId)
       const response = await api.post(`/campaigns/${campaignId}/run`)
-      
       const updatedCampaign = response.data.data
       commit('UPDATE_CAMPAIGN', updatedCampaign)
-      
       toast.success('Campaña iniciada exitosamente')
-      console.log('[Campaigns Store] Campaña ejecutada:', campaignId)
-      
       return updatedCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error ejecutando campaña:', error)
@@ -304,22 +272,17 @@ const actions = {
       commit('SET_LOADING', false)
     }
   },
-  
+
   // Pausar campaña
   async pauseCampaign({ commit }, campaignId) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Pausando campaña:', campaignId)
       const response = await api.post(`/campaigns/${campaignId}/pause`)
-      
       const updatedCampaign = response.data.data
       commit('UPDATE_CAMPAIGN', updatedCampaign)
-      
       toast.success('Campaña pausada exitosamente')
-      console.log('[Campaigns Store] Campaña pausada:', campaignId)
-      
       return updatedCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error pausando campaña:', error)
@@ -331,22 +294,17 @@ const actions = {
       commit('SET_LOADING', false)
     }
   },
-  
+
   // Reanudar campaña
   async resumeCampaign({ commit }, campaignId) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Reanudando campaña:', campaignId)
       const response = await api.post(`/campaigns/${campaignId}/resume`)
-      
       const updatedCampaign = response.data.data
       commit('UPDATE_CAMPAIGN', updatedCampaign)
-      
       toast.success('Campaña reanudada exitosamente')
-      console.log('[Campaigns Store] Campaña reanudada:', campaignId)
-      
       return updatedCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error reanudando campaña:', error)
@@ -362,11 +320,8 @@ const actions = {
   // Obtener estadísticas de campañas mejoradas (ACTUALIZADO SEGÚN BACKEND)
   async fetchCampaignStats({ commit }) {
     try {
-      console.log('[Campaigns Store] Obteniendo estadísticas mejoradas de campañas')
       const response = await api.get('/campaigns/stats')
-
       const stats = response.data.data || response.data
-      console.log('[Campaigns Store] Estadísticas obtenidas:', stats)
 
       // ✅ ACTUALIZADO: Usar nombres de campos del backend
       return {
@@ -453,10 +408,7 @@ const actions = {
   // Obtener datos para reutilizar campaña
   async getCampaignReuseData({ commit }, campaignId) {
     try {
-      console.log('[Campaigns Store] Obteniendo datos de reutilización para campaña:', campaignId)
       const response = await api.get(`/campaigns/${campaignId}/reuse-data`)
-      
-      console.log('[Campaigns Store] Datos de reutilización obtenidos:', response.data)
       return response.data.data || response.data
     } catch (error) {
       console.error('[Campaigns Store] Error obteniendo datos de reutilización:', error)
@@ -473,36 +425,15 @@ const actions = {
     commit('SET_ERROR', null)
 
     try {
-      console.log('🔄 [CAMPAIGNS STORE] === ENVIANDO CAMPAÑA REUTILIZADA ===')
-
-      // Log del FormData antes de enviar
-      console.log('🔄 [CAMPAIGNS STORE] FormData type:', formData.constructor.name)
-      console.log('🔄 [CAMPAIGNS STORE] FormData entries:')
-      for (let [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          console.log(`🔄 [CAMPAIGNS STORE] ${key}: FILE - "${value.name}" (${value.size} bytes, type: ${value.type})`)
-        } else {
-          console.log(`🔄 [CAMPAIGNS STORE] ${key}: "${value}"`)
-        }
-      }
-
       const response = await api.post('/campaigns/reuse', formData, {
-        timeout: 60000, // 60 segundos
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+        timeout: 60000,
+        headers: { 'Content-Type': 'multipart/form-data' }
       })
 
-      console.log('[Campaigns Store] Respuesta recibida:', response.data)
-
       if (response.data.success) {
-        const { campaignId, async, totalRecipients, type } = response.data.data
+        const { campaignId, async, totalRecipients } = response.data.data
 
-        // Si es asíncrona, mostrar mensaje y refrescar campañas
         if (async) {
-          console.log(`[Campaigns Store] Campaña ${campaignId} iniciada en segundo plano`)
-
-          // Refrescar lista de campañas para mostrar la nueva
           dispatch('fetchCampaigns', { page: 1, perPage: 20 })
 
           return {
@@ -543,13 +474,7 @@ const actions = {
   // Cancelar campaña en progreso
   async cancelCampaign({ commit }, campaignId) {
     try {
-      console.log('[Campaigns Store] Cancelando campaña:', campaignId)
-
-      const response = await api.post(`/campaigns/${campaignId}/cancel`, {
-        timeout: 30000
-      })
-
-      console.log('[Campaigns Store] Respuesta de cancelación:', response.data)
+      const response = await api.post(`/campaigns/${campaignId}/cancel`, { timeout: 30000 })
 
       if (response.data.success) {
         // Actualizar estado local inmediatamente
@@ -577,32 +502,23 @@ const actions = {
       commit('SET_LOADING', true)
       commit('CLEAR_MESSAGES')
 
-      console.log('[Campaigns Store] Reenviando campaña:', campaignId)
-
       // Usar campaignAPI con timeout extendido para reenvíos
       const response = await campaignAPI.post(`/campaigns/${campaignId}/resend`)
 
       if (response.data.success) {
-        // Mostrar mensaje de éxito inmediato
         commit('SET_SUCCESS_MESSAGE', response.data.message)
         toast.success(response.data.message)
 
-        // Si es asíncrono, mostrar información adicional
         if (response.data.data?.async) {
           commit('SET_INFO_MESSAGE', response.data.data.note)
-          toast.info('Recibirás notificaciones del progreso en tiempo real', {
-            timeout: 8000
-          })
+          toast.info('Recibirás notificaciones del progreso en tiempo real', { timeout: 8000 })
         }
 
-        // Agregar la nueva campaña si existe
         if (response.data.data?.campaign) {
           commit('ADD_CAMPAIGN', response.data.data.campaign)
         }
 
-        // Refrescar lista de campañas
         await dispatch('fetchCampaigns')
-
         return response.data
       } else {
         throw new Error(response.data.error || 'Error desconocido')
@@ -634,26 +550,37 @@ const actions = {
     }
   },
 
+  // Actualizar progreso en tiempo real (llamado desde whatsapp store via cross-module dispatch)
+  onCampaignProgress({ commit }, data) {
+    commit('UPDATE_CAMPAIGN_PROGRESS', {
+      campaignId: data.campaignId,
+      sentCount: data.sent || data.sentCount || 0,
+      totalCount: data.total || data.totalCount
+    })
+  },
+
+  // Marcar campaña como completada en tiempo real
+  async onCampaignCompleted({ commit, dispatch }, data) {
+    commit('UPDATE_CAMPAIGN_COMPLETED', {
+      campaignId: data.campaignId,
+      status: data.status || 'COMPLETED',
+      successCount: data.successCount
+    })
+    // Refrescar desde BD después de unos segundos para tener datos definitivos
+    setTimeout(() => dispatch('fetchCampaigns'), 2000)
+  },
+
   // Duplicar campaña
   async duplicateCampaign({ commit, dispatch }, { campaignId, newName = null }) {
     commit('SET_LOADING', true)
     commit('SET_ERROR', null)
-    
+
     try {
-      console.log('[Campaigns Store] Duplicando campaña:', campaignId, 'con nombre:', newName)
-      const response = await api.post(`/campaigns/${campaignId}/duplicate`, {
-        newName
-      })
-      
+      const response = await api.post(`/campaigns/${campaignId}/duplicate`, { newName })
       const duplicatedCampaign = response.data.data || response.data
       commit('ADD_CAMPAIGN', duplicatedCampaign)
-      
       toast.success(`Campaña duplicada: ${duplicatedCampaign.name}`)
-      console.log('[Campaigns Store] Campaña duplicada:', duplicatedCampaign.id)
-      
-      // Refrescar la lista de campañas
       await dispatch('fetchCampaigns')
-      
       return duplicatedCampaign
     } catch (error) {
       console.error('[Campaigns Store] Error duplicando campaña:', error)
@@ -668,105 +595,33 @@ const actions = {
 }
 
 const getters = {
-  // Todas las campañas
-  campaigns: state => {
-    console.log('[Campaigns Store] getter campaigns:', state.campaigns.length)
-    return state.campaigns
-  },
-  
-  // Campaña actual
-  currentCampaign: state => {
-    console.log('[Campaigns Store] getter currentCampaign:', state.currentCampaign?.id || 'null')
-    return state.currentCampaign
-  },
-  
-  // Campañas por estado
-  campaignsByStatus: (state) => (status) => {
-    const filtered = state.campaigns.filter(campaign => campaign.status === status)
-    console.log(`[Campaigns Store] getter campaignsByStatus(${status}):`, filtered.length)
-    return filtered
-  },
-  
-  // Campañas recientes (últimas 5)
-  recentCampaigns: state => {
-    const recent = state.campaigns
-      .slice()
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 5)
-    console.log('[Campaigns Store] getter recentCampaigns:', recent.length)
-    return recent
-  },
-  
-  // Estadísticas rápidas
-  campaignStats: state => {
-    const stats = state.campaigns.reduce((acc, campaign) => {
-      acc.total++
-      if (campaign.status === CAMPAIGN_STATUS.COMPLETED) {
-        acc.completed++
-      } else if (campaign.status === CAMPAIGN_STATUS.RUNNING) {
-        acc.inProgress++
-      } else if (campaign.status === CAMPAIGN_STATUS.FAILED) {
-        acc.failed++
-      }
-      return acc
-    }, { total: 0, completed: 0, inProgress: 0, failed: 0 })
-    
-    console.log('[Campaigns Store] getter campaignStats:', stats)
-    return stats
-  },
-  
-  // Estado de carga
-  loading: state => {
-    console.log('[Campaigns Store] getter loading:', state.loading)
-    return state.loading
-  },
-  
-  // Error actual
-  error: state => {
-    console.log('[Campaigns Store] getter error:', state.error)
-    return state.error
-  },
-  
-  // Información de paginación
-  pagination: state => {
-    console.log('[Campaigns Store] getter pagination:', state.pagination)
-    return state.pagination
-  },
-  
-  // Filtros activos
-  filters: state => {
-    console.log('[Campaigns Store] getter filters:', state.filters)
-    return state.filters
-  },
-
-  // Datos de reutilización
-  reuseData: state => {
-    console.log('[Campaigns Store] getter reuseData:', state.reuseData)
-    return state.reuseData
-  },
-  
-  // Verificar si hay filtros activos
-  hasActiveFilters: state => {
-    const hasFilters = !!(state.filters.status || state.filters.search || state.filters.dateRange)
-    console.log('[Campaigns Store] getter hasActiveFilters:', hasFilters)
-    return hasFilters
-  },
-
-  // Mensajes del estado
+  campaigns: state => state.campaigns,
+  currentCampaign: state => state.currentCampaign,
+  campaignsByStatus: state => status => state.campaigns.filter(c => c.status === status),
+  recentCampaigns: state => state.campaigns.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5),
+  campaignStats: state => state.campaigns.reduce((acc, c) => {
+    acc.total++
+    if (c.status === CAMPAIGN_STATUS.COMPLETED) acc.completed++
+    else if (c.status === CAMPAIGN_STATUS.RUNNING) acc.inProgress++
+    else if (c.status === CAMPAIGN_STATUS.FAILED) acc.failed++
+    return acc
+  }, { total: 0, completed: 0, inProgress: 0, failed: 0 }),
+  loading: state => state.loading,
+  error: state => state.error,
+  pagination: state => state.pagination,
+  filters: state => state.filters,
+  reuseData: state => state.reuseData,
+  hasActiveFilters: state => !!(state.filters.status || state.filters.search || state.filters.dateRange),
   successMessage: state => state.successMessage,
   infoMessage: state => state.infoMessage,
-
-  // Campañas con estado extendido
-  campaignsWithStatus: state => {
-    return state.campaigns.map(campaign => ({
-      ...campaign,
-      isProcessing: campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING',
-      isAsync: (campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING') &&
-               (campaign.name.includes('(Reenviada)') ||
-                campaign.name.includes('(Copia)') ||
-                campaign.name.includes('(Reutilizada)'))
-    }))
-  }
+  campaignsWithStatus: state => state.campaigns.map(campaign => ({
+    ...campaign,
+    isProcessing: campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING',
+    isAsync: (campaign.status === 'IN_PROGRESS' || campaign.status === 'RUNNING') &&
+             (campaign.name.includes('(Reenviada)') ||
+              campaign.name.includes('(Copia)') ||
+              campaign.name.includes('(Reutilizada)'))
+  }))
 }
 
 export default {

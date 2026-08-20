@@ -263,10 +263,7 @@ const loadCampaignData = async () => {
   if (!props.campaignId) return
 
   try {
-    console.log('[ReuseCampaignModal] Cargando datos de reutilización para campaña:', props.campaignId)
     const response = await store.dispatch('campaigns/getCampaignReuseData', props.campaignId)
-
-    console.log('[ReuseCampaignModal] Datos recibidos:', response)
 
     campaignData.value = { ...response.campaignData }
     metadata.value = { ...response.metadata }
@@ -276,22 +273,15 @@ const loadCampaignData = async () => {
 
     // Verificar estado del media
     if (metadata.value.mediaStatus === 'missing') {
-      console.warn('[ReuseCampaignModal] Media no disponible para la campaña')
       toast.warning('La imagen original no está disponible')
-      // Si el archivo no está disponible, marcarlo como que debe ser eliminado
       removeExistingMedia.value = true
     }
 
-    // Generar nombre sugerido
+    // Generar nombre sugerido (sin repetir el sufijo si ya existe)
     if (!campaignData.value.name || campaignData.value.name === metadata.value.originalName) {
-      campaignData.value.name = `${metadata.value.originalName} (Reutilizada)`
+      const cleanName = (metadata.value.originalName || '').replace(/\s*\((Reutilizada|Reenviada|Copia)\)\s*$/, '').trim()
+      campaignData.value.name = `${cleanName} (Reutilizada)`
     }
-
-    console.log('🔄 [FRONTEND] Initial media state:', {
-      hasMediaPath: !!campaignData.value.mediaPath,
-      mediaStatus: metadata.value.mediaStatus,
-      removeExistingMedia: removeExistingMedia.value
-    })
   } catch (error) {
     console.error('[ReuseCampaignModal] Error cargando datos:', error)
     toast.error('Error al cargar datos de la campaña')
@@ -303,14 +293,12 @@ const removeRecipient = (index) => {
 }
 
 const removeMedia = () => {
-  console.log('🔄 [FRONTEND] User requested to remove existing media')
   removeExistingMedia.value = true
-  newFile.value = null // También limpiar cualquier archivo nuevo
+  newFile.value = null
   toast.info('Archivo multimedia será eliminado de la campaña')
 }
 
 const restoreExistingMedia = () => {
-  console.log('🔄 [FRONTEND] User restored existing media')
   removeExistingMedia.value = false
   toast.success('Archivo multimedia original será conservado')
 }
@@ -321,15 +309,8 @@ const getFileName = (path) => {
 }
 
 const handleFileUpload = async (files) => {
-  console.log('[ReuseCampaignModal] Nuevo archivo seleccionado:', files)
+  if (!files || (Array.isArray(files) && files.length === 0)) return
 
-  // Verificar si hay archivos
-  if (!files || (Array.isArray(files) && files.length === 0)) {
-    console.log('[ReuseCampaignModal] No hay archivos seleccionados')
-    return
-  }
-
-  // Convertir a array si es necesario
   let fileArray = files
   if (files instanceof FileList) {
     fileArray = Array.from(files)
@@ -337,62 +318,30 @@ const handleFileUpload = async (files) => {
     fileArray = [files]
   }
 
-  // Filtrar archivos válidos (no undefined/null)
   fileArray = fileArray.filter(file => file && file instanceof File)
-
-  if (fileArray.length === 0) {
-    console.log('[ReuseCampaignModal] No hay archivos válidos')
-    return
-  }
+  if (fileArray.length === 0) return
 
   try {
-    // Crear MediaHandler sin toasts para evitar duplicados
-    const customMediaHandler = new (await import('@/utils/mediaHandler')).MediaHandler({
-      showToast: false
-    })
-
-    // Validar usando MediaHandler
+    const customMediaHandler = new (await import('@/utils/mediaHandler')).MediaHandler({ showToast: false })
     const validation = customMediaHandler.validateFiles(fileArray)
 
     if (!validation.isValid) {
-      console.error('[ReuseCampaignModal] Archivo inválido:', validation.invalidFiles)
       newFile.value = null
-      // Mostrar errores manualmente
-      validation.invalidFiles.forEach(error => {
-        toast.error(error.error)
-      })
+      validation.invalidFiles.forEach(error => toast.error(error.error))
       return
     }
 
     const file = fileArray[0]
-    console.log('[ReuseCampaignModal] Archivo válido procesado:', validation.validFiles[0])
-
-    // Generar preview para imágenes
     if (customMediaHandler.isImageFile(file)) {
-      try {
-        const preview = await customMediaHandler.generatePreview(file)
-        console.log('[ReuseCampaignModal] Preview generado para:', preview.name)
-      } catch (error) {
-        console.warn('[ReuseCampaignModal] Error generando preview:', error)
-      }
+      try { await customMediaHandler.generatePreview(file) } catch {}
     }
 
     toast.success(`Archivo "${file.name}" seleccionado correctamente`)
 
-    // 🚨 IMPORTANTE: Si el usuario sube un archivo nuevo, cancelar la eliminación automáticamente
     if (removeExistingMedia.value) {
-      console.log('🔄 [FRONTEND] Nuevo archivo subido - cancelando eliminación automáticamente')
       removeExistingMedia.value = false
       toast.info('Archivo nuevo seleccionado - se reemplazará la imagen existente')
     }
-
-    // LOG FINAL - Verificar estado después de procesamiento
-    console.log('🔄 [FRONTEND] Estado final después de handleFileUpload:')
-    console.log('🔄 [FRONTEND] newFile.value:', newFile.value)
-    console.log('🔄 [FRONTEND] newFile.value.length:', newFile.value?.length)
-    console.log('🔄 [FRONTEND] first file:', newFile.value?.[0]?.name)
-    console.log('🔄 [FRONTEND] removeExistingMedia.value:', removeExistingMedia.value)
-
   } catch (error) {
     console.error('[ReuseCampaignModal] Error procesando archivo:', error)
     toast.error(`Error procesando archivo: ${error.message}`)
@@ -402,83 +351,42 @@ const handleFileUpload = async (files) => {
 
 const buildFormData = () => {
   try {
-    console.log('🔄 [FRONTEND] Building FormData for campaign reuse...')
-
     const formData = new FormData()
 
-    // Campos básicos
     formData.append('name', campaignData.value.name.trim())
     formData.append('message', campaignData.value.message.trim())
     formData.append('recipients', JSON.stringify(campaignData.value.recipients))
     formData.append('type', campaignData.value.type)
 
-    // 🚨 IMPORTANTE: Lógica de imagen para reutilización
-    console.log('🔄 [FRONTEND] Raw newFile.value:', newFile.value)
-    console.log('🔄 [FRONTEND] newFile.value type:', typeof newFile.value)
-    console.log('🔄 [FRONTEND] newFile.value instanceof FileList:', newFile.value instanceof FileList)
-    console.log('🔄 [FRONTEND] newFile.value is Array:', Array.isArray(newFile.value))
-
-    // Detectar archivo nuevo correctamente (Vuetify 3 puede enviar File directo o array)
+    // Detectar archivo nuevo (Vuetify 3 puede enviar File directo o array)
     const hasNewFile = newFile.value && (
       (newFile.value instanceof File) ||
       (newFile.value.length > 0)
     )
     const hasExistingMedia = campaignData.value.mediaPath
-    const removeMedia = removeExistingMedia.value || false  // Nueva variable para controlar eliminación
-
-    console.log('🔄 [FRONTEND] Media logic evaluation:', {
-      hasNewFile,
-      hasExistingMedia,
-      removeMedia,
-      existingMediaPath: campaignData.value.mediaPath,
-      newFileName: hasNewFile ? (
-        newFile.value instanceof File ? newFile.value.name : newFile.value[0]?.name
-      ) : null,
-      newFileLength: newFile.value?.length || (newFile.value instanceof File ? 1 : 0),
-      newFileFirst: newFile.value instanceof File ? newFile.value : newFile.value?.[0]
-    })
+    const removeMedia = removeExistingMedia.value || false
 
     if (removeMedia === true) {
-      // Usuario quiere QUITAR la imagen
       formData.append('removeMedia', 'true')
-      console.log('🔄 [FRONTEND] Removing existing media')
-
     } else if (hasNewFile) {
-      // Usuario subió una NUEVA imagen
       let file = null
       if (newFile.value instanceof File) {
-        file = newFile.value  // Archivo directo
+        file = newFile.value
       } else if (newFile.value[0] instanceof File) {
-        file = newFile.value[0]  // Primer archivo del array
+        file = newFile.value[0]
       }
-
       if (file) {
         formData.append('media', file)
-        console.log('🔄 [FRONTEND] Adding new media file:', file.name, `(${file.size} bytes)`)
       } else {
-        console.error('🔄 [FRONTEND] hasNewFile is true but could not extract file')
+        console.error('[ReuseCampaignModal] hasNewFile true pero no se pudo extraer el archivo')
       }
-
     } else if (hasExistingMedia) {
-      // Usuario mantiene la imagen EXISTENTE
       formData.append('existingMediaPath', campaignData.value.mediaPath)
-      console.log('🔄 [FRONTEND] Keeping existing media:', campaignData.value.mediaPath)
-    }
-    // Si no hay media existente ni nueva, no agregamos nada
-
-    // DEBUG FormData para reutilización
-    console.log('🔄 [FRONTEND-DEBUG] Reuse FormData contents:')
-    for (let [key, value] of formData.entries()) {
-      if (value instanceof File) {
-        console.log(`  ${key}: FILE - "${value.name}" (${value.size} bytes)`)
-      } else {
-        console.log(`  ${key}: "${value}"`)
-      }
     }
 
     return formData
   } catch (error) {
-    console.error('❌ [FRONTEND] Error building FormData:', error)
+    console.error('❌ [ReuseCampaignModal] Error building FormData:', error)
     throw new Error(`Error procesando datos de campaña: ${error.message}`)
   }
 }
@@ -489,26 +397,10 @@ const validateReuseData = () => {
     (newFile.value instanceof File) ||
     (newFile.value.length > 0)
   )
-  const hasExistingMedia = campaignData.value.mediaPath
   const removeMedia = removeExistingMedia.value
 
-  console.log('🔄 [VALIDATION] Validating reuse data:', {
-    originalHasMedia: hasExistingMedia,
-    editedRemoveMedia: removeMedia,
-    hasNewFile,
-    newFileName: hasNewFile ? (
-      newFile.value instanceof File ? newFile.value.name : newFile.value[0]?.name
-    ) : null,
-    existingMediaPath: campaignData.value.mediaPath
-  })
-
   if (removeMedia && hasNewFile) {
-    console.warn('⚠️ [VALIDATION] removeMedia is true but newFile provided - will remove media')
     toast.warning('Se eliminará el archivo existente. El nuevo archivo será ignorado.')
-  }
-
-  if (!removeMedia && !hasNewFile && !hasExistingMedia) {
-    console.log('ℹ️ [VALIDATION] No media will be sent (no original, no new file, not removing)')
   }
 
   return true
@@ -528,13 +420,10 @@ const listenToCampaignProgress = (campaignId) => {
   const socket = store.state.whatsapp.socket
   if (!socket) return
 
-  console.log(`[ReuseCampaignModal] Escuchando progreso de campaña ${campaignId}`)
-
   // Escuchar eventos de progreso
   socket.on('campaign-progress', (data) => {
     if (data.campaignId === campaignId) {
-      console.log(`Progreso: ${data.sent}/${data.total} (${data.percentage}%)`)
-      // Aquí puedes mostrar una notificación o actualizar UI
+      // progreso manejado por CampaignsView via polling
     }
   })
 
@@ -557,22 +446,7 @@ const launchCampaign = async () => {
   isLaunching.value = true
 
   try {
-    console.log('🔄 [FRONTEND] === INICIANDO REUTILIZACIÓN DE CAMPAÑA ===')
-
-    // Crear FormData y loggear antes de enviar
     const formData = buildFormData()
-
-    console.log('🔄 [FRONTEND] === FINAL FORMDATA ANTES DE ENVIAR ===')
-    console.log('🔄 [FRONTEND] FormData entries count:', Array.from(formData.entries()).length)
-
-    // Log completo del FormData final
-    for (let [key, value] of formData.entries()) {
-      if (value instanceof File) {
-        console.log(`🔄 [FRONTEND] ${key}: FILE - "${value.name}" (${value.size} bytes, type: ${value.type})`)
-      } else {
-        console.log(`🔄 [FRONTEND] ${key}: "${value}"`)
-      }
-    }
 
     const result = await store.dispatch('campaigns/createCampaignFromReuse', {
       formData
@@ -641,24 +515,17 @@ const setupSocketEvents = () => {
 
   // Escuchar eventos de finalización de campaña reutilizada
   socket.on('campaign-completed', (data) => {
-    console.log('[ReuseCampaignModal] Campaña completada:', data)
-
     if (data.reused) {
       toast.success(`Campaña reutilizada completada: ${data.successCount}/${data.totalCount} mensajes enviados`, {
         timeout: 10000
       })
-
-      // Actualizar campañas
       store.dispatch('campaigns/fetchCampaigns')
     }
   })
 
   // Escuchar errores de campaña reutilizada
   socket.on('campaign-error', (data) => {
-    console.log('[ReuseCampaignModal] Error en campaña reutilizada:', data)
     toast.error(`Error en campaña reutilizada: ${data.error}`)
-
-    // Actualizar campañas para reflejar el estado de error
     store.dispatch('campaigns/fetchCampaigns')
   })
 }

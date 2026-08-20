@@ -128,7 +128,32 @@
                 item-title="text"
                 item-value="value"
                 prepend-icon="mdi-timer"
+                class="mb-4"
               ></v-select>
+
+              <v-text-field
+                v-if="hasScheduledCampaigns"
+                v-model="campaign.sendAt"
+                type="datetime-local"
+                label="Programar para (opcional)"
+                :min="minDateTimeLocal"
+                :rules="[rules.futureDate]"
+                prepend-icon="mdi-calendar-clock"
+                hint="Dejalo vacío para enviar ahora"
+                persistent-hint
+              ></v-text-field>
+
+              <v-alert
+                v-else
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="mt-2"
+              >
+                <v-icon start size="small">mdi-calendar-clock</v-icon>
+                Programar envíos es una función de los planes Pro y Business.
+                <router-link :to="{ name: 'Subscription' }">Mejorá tu plan</router-link>
+              </v-alert>
             </v-card-text>
           </v-card>
         </v-col>
@@ -214,8 +239,7 @@
                       v-if="hasGroupsWithoutParticipants"
                     >
                       <v-icon start>mdi-alert</v-icon>
-                      <strong>PROBLEMA:</strong> Los grupos no tienen datos de participantes desde el backend.
-                      <br><small>Revisa los logs de la consola para ver qué está llegando exactamente.</small>
+                      Algunos grupos no tienen información de participantes disponible. El mensaje se enviará igualmente a todos los miembros del grupo.
                     </v-alert>
                     
                     <v-list
@@ -331,6 +355,7 @@ import { useToast } from 'vue-toastification'
 import * as validators from '@/utils/validators'
 import { MESSAGE_LIMITS, FILE_LIMITS } from '@/utils/constants'
 import { mediaHandler, createFormDataWithMedia } from '@/utils/mediaHandler'
+import { subscriptionService } from '@/services/subscriptionService'
 
 const store = useStore()
 const router = useRouter()
@@ -346,7 +371,23 @@ const campaign = ref({
   name: '',
   message: '',
   media: null,
-  delay: 5000
+  delay: 5000,
+  sendAt: null
+})
+
+// Programar campañas es Pro/Business — se consulta al montar (ver onMounted)
+const hasScheduledCampaigns = ref(false)
+
+// El input datetime-local espera "YYYY-MM-DDTHH:mm" en hora LOCAL del
+// navegador (no UTC) — toISOString() convertiría mal el :min para usuarios
+// fuera de UTC, por eso se arma a mano con los componentes locales.
+const toLocalDateTimeInputValue = (date) => {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const minDateTimeLocal = computed(() => {
+  return toLocalDateTimeInputValue(new Date(Date.now() + 60000)) // +1min de margen
 })
 
 const selectedContacts = ref([])
@@ -474,14 +515,22 @@ const rules = {
     const isValidExtension = extension && allowedExtensions.includes(extension)
 
     return (isValidMimeType || isValidExtension) || 'Tipo de archivo no permitido. Usa JPG, PNG, MP4, PDF, DOC o DOCX'
+  },
+  futureDate: (value) => {
+    if (!value) return true // campo opcional, vacío = enviar ahora
+    const parsed = new Date(value)
+    return (!isNaN(parsed.getTime()) && parsed.getTime() > Date.now()) || 'La fecha programada debe ser futura'
   }
 }
 
 const handleSubmit = async () => {
   if (!valid.value) return
 
-  // Verificar que WhatsApp esté conectado
-  if (!store.getters['whatsapp/isConnected']) {
+  const isScheduled = !!campaign.value.sendAt
+
+  // WhatsApp conectado solo hace falta para envío inmediato — una campaña
+  // programada se puede crear sin estar conectado, se valida al despachar.
+  if (!isScheduled && !store.getters['whatsapp/isConnected']) {
     toast.error('WhatsApp no está conectado. Conecta primero.')
     return
   }
@@ -540,6 +589,11 @@ const handleSubmit = async () => {
     const mediaInfo = getMediaForCampaign()
     let campaignData
 
+    // El input datetime-local entrega la hora en horario LOCAL del navegador;
+    // se convierte a ISO/UTC acá para que el backend (que corre en su propio
+    // huso horario) interprete el instante correcto sin importar dónde esté.
+    const sendAtISO = isScheduled ? new Date(campaign.value.sendAt).toISOString() : null
+
     // Crear FormData usando el MediaHandler moderno
     const createCampaignFormData = (baseData) => {
       try {
@@ -576,7 +630,8 @@ const handleSubmit = async () => {
         message: campaign.value.message,
         recipients: groupRecipients,
         type: 'groups',
-        delay: campaign.value.delay
+        delay: campaign.value.delay,
+        sendAt: sendAtISO
       }
       campaignData = createCampaignFormData(baseData)
       console.log(`📢 Campaña de GRUPOS: ${groupRecipients.length} grupos`)
@@ -588,7 +643,8 @@ const handleSubmit = async () => {
         message: campaign.value.message,
         recipients: contactRecipients,
         type: 'contacts',
-        delay: campaign.value.delay
+        delay: campaign.value.delay,
+        sendAt: sendAtISO
       }
       campaignData = createCampaignFormData(baseData)
       console.log(`📞 Campaña de CONTACTOS: ${contactRecipients.length} contactos`)
@@ -602,7 +658,8 @@ const handleSubmit = async () => {
         type: 'mixed',
         contactRecipients,
         groupRecipients,
-        delay: campaign.value.delay
+        delay: campaign.value.delay,
+        sendAt: sendAtISO
       }
       campaignData = createCampaignFormData(baseData)
       console.log(`🔄 Campaña MIXTA: ${contactRecipients.length} contactos + ${groupRecipients.length} grupos`)
@@ -610,22 +667,20 @@ const handleSubmit = async () => {
     } else {
       throw new Error('No se han seleccionado destinatarios válidos')
     }
-    
-    // Usar la nueva acción del store WhatsApp
-    const result = await store.dispatch('whatsapp/createCampaign', campaignData)
-    
-    if (result && result.id) {
-      // Ejecutar la campaña inmediatamente
-      try {
-        await store.dispatch('whatsapp/executeCampaign', result.id)
-        toast.success(`Campaña "${campaign.value.name}" creada y ejecutándose`)
 
-        // ⚡ ACTUALIZAR BALANCE DE CRÉDITOS DESPUÉS DE ENVIAR
-        await store.dispatch('credits/fetchBalance')
-      } catch (executeError) {
-        console.error('Error ejecutando campaña:', executeError)
-        toast.warning(`Campaña creada pero error al ejecutar: ${executeError.message}`)
-      }
+    // Crear la campaña. El backend ya se encarga de todo lo que sigue:
+    // si es inmediata, empieza a enviarla sola en segundo plano; si quedó
+    // programada, el cron la despacha solo cuando llegue send_at. No hace
+    // falta (ni conviene) llamar a /execute acá — dispararía un envío
+    // duplicado sobre una campaña que el backend ya está enviando.
+    const result = await store.dispatch('whatsapp/createCampaign', campaignData)
+
+    if (isScheduled) {
+      toast.success(`Campaña "${campaign.value.name}" programada para ${new Date(sendAtISO).toLocaleString('es-AR')}`)
+    } else {
+      toast.success(`Campaña "${campaign.value.name}" creada y enviándose`)
+      // ⚡ ACTUALIZAR BALANCE DE CRÉDITOS (el crédito se descuenta al despachar)
+      store.dispatch('credits/fetchBalance').catch(() => {})
     }
 
     // Dar tiempo para que se actualice el store antes de navegar
@@ -701,7 +756,16 @@ const getMediaForCampaign = () => {
 
 onMounted(async () => {
   console.log('[NewCampaign] Componente montado')
-  
+
+  // Programar campañas es Pro/Business
+  try {
+    const data = await subscriptionService.getMySubscription()
+    hasScheduledCampaigns.value = !!data?.subscription?.features?.scheduledCampaigns
+  } catch (error) {
+    console.error('[NewCampaign] Error obteniendo suscripción:', error)
+    hasScheduledCampaigns.value = false
+  }
+
   // Cargar contactos y grupos
   try {
     await store.dispatch('whatsapp/fetchContacts')

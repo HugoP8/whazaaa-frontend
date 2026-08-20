@@ -228,9 +228,12 @@ const handleRefresh = async () => {
 const handleReconnect = async () => {
   reconnectLoading.value = true
   try {
-    // Intentar detectar y reconectar automáticamente
-    await store.dispatch('whatsapp/detectAndReconnect')
-    toast.info('Intentando reconexión automática')
+    // Reconexión no destructiva: reusa la sesión guardada (sin pedir QR nuevo).
+    // NOTA: detectAndReconnect() no sirve aquí — solo dispara connect() cuando
+    // el store *creía* estar conectado y dejó de estarlo; tras un giveUp,
+    // state.connected ya es false de antes, así que ese botón no haría nada.
+    await store.dispatch('whatsapp/connect')
+    toast.info('Intentando reconexión')
   } catch (error) {
     console.error('[ConnectionStatus] Error en reconexión:', error)
     toast.error('Error en reconexión automática')
@@ -250,14 +253,20 @@ const formatTime = (time) => {
 
 // Verificación periódica del estado
 const startStatusCheck = () => {
-  // Verificar cada 30 segundos cuando no está conectado
+  // Verificar cada 30 segundos SIEMPRE (no solo cuando isConnected===false).
+  // Si el socket se cae justo cuando WhatsApp se desconecta desde el teléfono,
+  // el evento 'connection-status' con requiresReauth puede no llegar nunca —
+  // este poll incondicional contra el backend es el respaldo que detecta ese caso.
   statusCheckInterval = setInterval(async () => {
-    if (!isConnected.value && !isConnecting.value) {
-      try {
+    if (isConnecting.value) return
+    try {
+      if (isConnected.value) {
+        await store.dispatch('whatsapp/checkStatus')
+      } else {
         await store.dispatch('whatsapp/detectAndReconnect')
-      } catch (error) {
-        console.warn('[ConnectionStatus] Error en verificación automática:', error)
       }
+    } catch (error) {
+      console.warn('[ConnectionStatus] Error en verificación automática:', error)
     }
   }, 30000)
 }
